@@ -1,0 +1,3 @@
+# WhyBot itself, plus the playground UI.
+-r ../requirements.txt
+gradio==6.30.0

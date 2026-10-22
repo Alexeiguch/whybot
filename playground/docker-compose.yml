@@ -1,0 +1,24 @@
+# One command: docker compose -f playground/docker-compose.yml up --build   ->  http://localhost:7860
+services:
+  playground:
+    build:
+      context: ..
+      dockerfile: playground/Dockerfile
+    image: whybot-playground
+    ports:
+      - "7860:7860"   # playground UI
+      - "8000:8000"   # WhyBot API (docs/api.md) + built-in UI
+    environment:
+      SAMPLE_MODE: "true"
+      # Optional live Zetaris (otherwise Live mode uses the recorded Zetaris results and says so).
+      # Mount the driver JAR (not redistributed) and point ZETARIS_JDBC_JAR at its path inside the container.
+      ZETARIS_JDBC_URL: ${ZETARIS_JDBC_URL:-jdbc:zetaris:lightning@host.docker.internal:10000}
+      ZETARIS_JDBC_JAR: ${ZETARIS_JDBC_JAR:-}
+      ZETARIS_USERNAME: ${ZETARIS_USERNAME:-}
+      ZETARIS_PASSWORD: ${ZETARIS_PASSWORD:-}
+    volumes:
+      # Live-mounted fixtures: re-recorded fixtures show up without a rebuild after `git pull`.
+      - ../fixtures:/app/fixtures:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
