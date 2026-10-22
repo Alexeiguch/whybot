@@ -7,6 +7,7 @@ still fails marks its hypothesis untestable for that iteration (fallback) instea
 from __future__ import annotations
 
 import json
+import re
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -227,7 +228,15 @@ class WhyBot:
             # ---- Plan
             done = [f"{e.qid} [{e.status}] ({e.hypothesis_id}) {e.purpose[:140]}" for e in evidence.values()]
             required = sorted({f.hypothesis_id for f in report.follow_up_queries}) if (report and it > 1) else []
-            plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it, required)
+            try:
+                plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it, required)
+            except LLMError as e:
+                if it == 1:
+                    raise
+                # a failed follow-up plan must not discard verified work: write (or escalate) with what the Critic accepted
+                tr.emit("Planner", "failed", output_summary=f"follow-up plan failed: {str(e)[:250]}; finishing with verified claims",
+                        status="error", target_agent="Writer")
+                break
             for h in plan.hypotheses:
                 hypotheses[h.id] = h  # revisions with the same id replace the earlier statement
             tr.emit("Planner", "plan", input_summary=feedback[:300] or question, target_agent="Executor",
@@ -527,6 +536,19 @@ class WhyBot:
             hypothesis_status=[], decision="retry" if retry else "insufficient_evidence",
             feedback="Critic unavailable this iteration; only number checks were applied." + (" Retrying." if retry else ""))
 
+    @staticmethod
+    def _dq_caveat(ans: FinalAnswer, dq_notes) -> FinalAnswer:
+        """The calendar data-quality finding is rendered deterministically from the DQ1 rows, never paraphrased."""
+        if not dq_notes:
+            return ans
+        keep = [c for c in ans.caveats if not re.search(r"d_holiday|date_dim|tpcds", c, re.I)]
+        items = "; ".join(n.split(" [DQ1")[0].replace("TPCDS date_dim.d_holiday=N but Nager.Date says ", "d_holiday=N, Nager.Date: ")
+                          for n in dq_notes[:6])
+        tag = dq_notes[0].split("[DQ1 ")[-1].rstrip("]") if "[DQ1 " in dq_notes[0] else ""
+        keep.append(f"Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on {len(dq_notes)} "
+                    f"date(s): {items}. Holidays come from Nager.Date only [DQ1 {tag}].")
+        return ans.model_copy(update={"caveats": keep})
+
     def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=()) -> FinalAnswer:
         sup_ids = set(decision.supported_cids)
         verdicts = {v.cid: v for v in (report.verdicts if report else [])}
@@ -547,12 +569,13 @@ class WhyBot:
                     verified_derived.append(d.value)
 
         def validator(ans: FinalAnswer) -> list[str]:
-            probs = validate_final(ans, evidence, allowed, verified_derived)
+            probs = validate_final(ans, evidence, allowed, verified_derived, context=question + "\n" + "\n".join(dq_notes))
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []
             return probs
         try:
             ans, meta = writer.write(question, status, supported, rejected, list(evidence.values()), hstat, validator)
+            ans = self._dq_caveat(ans, dq_notes)
             tr.emit("Writer", "final_answer", output_summary=ans.headline, confidence=ans.confidence,
                     data={"answer": ans.model_dump(), "llm": meta})
             return ans
@@ -569,7 +592,7 @@ class WhyBot:
                           answer=" ".join(c["statement"] for c in supported[:4]) or "No claim survived the Critic.",
                           recommendation="Review the verified claims and evidence table.", claims=fc,
                           caveats=["Writer fallback: deterministic rendering of verified claims"], confidence=0.3)
-        ans = drop_uncited(ans, evidence, allowed)
+        ans = self._dq_caveat(drop_uncited(ans, evidence, allowed), dq_notes)
         tr.emit("Writer", "fallback_answer", output_summary=ans.headline, status="fallback")
         return ans
 

@@ -198,3 +198,48 @@ def test_small_llm_arithmetic_slips_are_recomputed_not_trusted():
     fixes = []
     assert check_derived_values(c, fixes) == []
     assert fixes and "45.5" in c.statement and "45.9" not in c.statement
+
+
+def test_dates_in_final_text_must_appear_in_results_or_notes():
+    from whybot.checks import check_text_dates
+    e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
+                 rows=[["2024-11-21", 153149], ["2024-11-28", 77244]], row_count=2, tables=["t"])
+    note = "2024-11-11: d_holiday=N but Nager.Date says Veterans Day"
+    assert check_text_dates("Thanksgiving, 28 Nov; rain on Nov 21st; Veterans Day (11 Nov) mislabelled", {"Q1": e}, note) == []
+    assert check_text_dates("same issue for 14 Nov (Veterans Day)", {"Q1": e}, note)
+
+
+def test_placeholders_are_filled_by_the_evaluator():
+    from whybot.checks import check_derived_values
+    from whybot.schemas import DerivedValue
+    c = _claim_txt("Trips fell {pct}% vs the baseline average", VALS)
+    c.derived = [DerivedValue(name="pct", formula=BASE)]
+    assert check_derived_values(c) == [] and c.statement == "Trips fell 45.5% vs the baseline average"
+    c2 = _claim_txt("Trips fell {nope}%", VALS)
+    assert check_derived_values(c2)
+
+
+def test_boolean_flags_match_across_encodings():
+    assert value_matches("True", 1) and value_matches("False", 0) and value_matches(True, "true") and value_matches("Y", 1)
+    assert not value_matches("True", 0) and not value_matches("2", "2024-02-13")
+
+
+def test_direction_of_change_must_match_the_sign():
+    from whybot.checks import check_derived_values
+    from whybot.schemas import DerivedValue
+    snow = [131279, 145899, 159150, 88213]   # real Saturdays Dec 2024: 21 Dec vs 7/14/28 Dec -> +0.15%
+    c = _claim_txt("Trips on 21 Dec were lower than the other Saturdays", snow)
+    c.derived = [DerivedValue(name="pct_change_vs_baseline", formula=BASE)]
+    probs = check_derived_values(c)
+    assert probs and "decrease" in probs[0]
+    c2 = _claim_txt("Trips fell {pct}% vs the baseline", VALS)
+    c2.derived = [DerivedValue(name="pct", formula=BASE)]
+    assert check_derived_values(c2) == []
+
+
+def test_text_percentages_need_a_verified_value():
+    from whybot.checks import check_text_numbers
+    e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
+                 rows=[["2024-12-07", 145899], ["2024-12-14", 159150], ["2024-12-21", 131279], ["2024-12-28", 88213]], row_count=4, tables=["t"])
+    assert check_text_numbers("trips were 15% below the baseline", {"Q1": e}, {"Q1"}, [0.15])
+    assert check_text_numbers("trips were 0.15% above the baseline", {"Q1": e}, {"Q1"}, [0.15]) == []

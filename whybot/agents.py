@@ -30,6 +30,7 @@ class Planner:
         "Turn the analyst's bounded question into testable, falsifiable hypotheses and a minimal SQL plan. "
         "Always include H0 (kind=metric) that quantifies the change: the target window vs a like-for-like baseline (same weekday where relevant). "
         "On the first iteration propose at least 4 competing hypotheses from: weather, holiday, day_of_week, fare_mix, zone_mix, data_quality. "
+        "The data covers 2024-04-01..2025-02-28 only (weather to 2025-02-05): never plan a query outside that window, so there are no earlier years to compare. "
         "Each query purpose must be concrete (columns, grouping, filters, exact date windows) and use ONLY tables listed in the catalog. "
         "Keep queries few (one per hypothesis is ideal, max 7 total) and aggregated. Use memory lessons when relevant. "
         "On later iterations, only add queries that address the critic feedback; do not repeat queries that already succeeded."
@@ -124,9 +125,16 @@ class Analyst:
         "(differences or % changes you can show from cited values). Do not speculate beyond the numbers; draft refuting claims too. "
         "At most 8 short claims. Treat suspicious results (identical values on every row) as unreliable. "
         "Every percentage, ratio or average written in a statement must be declared in derived[] with a formula over the claim's "
-        "cited values v1..vn (cite EVERY operand: the target and each baseline value), e.g. "
-        "{name: pct_change_vs_baseline, value: -45.45, formula: (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100}. The formula is re-evaluated; "
-        "a mismatch rejects the claim."
+        "cited values v1..vn (1-based, in the order of cited_values; cite EVERY operand: the target cell FIRST, then each baseline cell), e.g. "
+        "{name: pct_change_vs_baseline, formula: (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100}. Write the number in the statement as a "
+        "placeholder {pct_change_vs_baseline}: WhyBot evaluates the formula and fills it in, so never do the arithmetic yourself. "
+        "Rules: cited_values are raw cells copied from a returned row (never an average or total you computed: put those in derived); "
+        "one metric per claim (a second metric needs its own claim and its own v-numbering); to claim something is ABSENT cite a "
+        "COUNT cell equal to 0 or say it in words without a row_hint, never a row_hint for a row that is not in the result; "
+        "if a query returned no rows or NULLs, do not draft a claim from it. The data only covers 2024-04-01..2025-02-28. "
+        "The question's premise may be wrong: ALWAYS draft one H0 claim that states the measured change neutrally with its sign, "
+        "e.g. 'Trips on 2024-12-21 were {pct_change_vs_baseline}% vs the mean of the other Saturdays' (WhyBot fills in a signed value), "
+        "and if the change is small (under about 5%) or opposite to the question, add a claim saying the premise is not supported by the data."
     )
 
     def __init__(self, llm: BaseLLM):
@@ -137,7 +145,12 @@ class Analyst:
         user = (f"QUESTION: {question}\n\nHYPOTHESES:\n{plan_text}\n\nEVIDENCE:\n" +
                 "\n\n".join(e.for_prompt() for e in evidence) + f"\n\nCRITIC FEEDBACK ON EARLIER DRAFT:\n{feedback or '(none)'}")
 
+        ev_map = {e.qid: e for e in evidence}
+        rounds = {"n": 0}
+
         def validate(cs: ClaimSet) -> list[str]:
+            from .checks import check_claim_numbers
+            rounds["n"] += 1
             errs = []
             if not cs.claims:
                 errs.append("draft at least one claim")
@@ -145,6 +158,11 @@ class Analyst:
                 for cv in c.cited_values:
                     if cv.qid not in ev_ids:
                         errs.append(f"{c.cid} cites unknown {cv.qid}")
+            if errs or rounds["n"] >= 3:
+                return errs  # two self-repair rounds; after that the Critic's own number check decides
+            for c in cs.claims:
+                ch = check_claim_numbers(c.model_copy(deep=True), ev_map)
+                errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
         return self.llm.complete_json("analyst", self.SYSTEM, user, ClaimSet, validator=validate, max_tokens=5000)
@@ -161,7 +179,11 @@ class Critic:
         "catalog) when a specific extra test would settle it; decision=insufficient_evidence if more SQL cannot help. "
         "A fare or zone mix shift describes HOW a change happened, not WHY: never accept it as the root cause while an external "
         "driver (weather, holiday) is untested or its query failed; request that test instead. When two drivers coincide "
-        "(e.g. holiday and rain on the same day), say so and weigh them against baselines that isolate each one."
+        "(e.g. holiday and rain on the same day), say so and weigh them against baselines that isolate each one. "
+        "If H0 shows no material change (under about 5%) or a change opposite to the question, the correct answer is that the "
+        "premise is false: mark the neutral H0 claim supported, mark causal hypotheses refuted or inconclusive, and decide accept. "
+        "Derived values named *pct* are already percentages: 0.15 means +0.15 percent (no change), not 15%. Read the sign and "
+        "size of every derived value and check the statement's wording matches it; a change under about 5% is not a drop."
     )
 
     def __init__(self, llm: BaseLLM):
@@ -193,7 +215,10 @@ class Writer:
         "You are the Writer in WhyBot. Produce the final answer for a research analyst using ONLY critic-supported claims. "
         "Every claim must carry citations {qid, sql_hash, table} copied exactly from the evidence list. "
         "Give a one-line headline, a short answer, an actionable recommendation, honest caveats (rejected or untested hypotheses, "
-        "data limitations) and a calibrated confidence. Add 0-3 reusable lessons for future investigations (schema quirks, filters, joins)."
+        "data limitations) and a calibrated confidence. Add 0-3 reusable lessons for future investigations (schema quirks, filters, joins). "
+        "Cite ONLY the queries in the CITABLE EVIDENCE list. If the supported claims show the question's premise is false (no "
+        "material change, or the opposite change), say so plainly in the headline. Every number you write must appear in a "
+        "supported claim; do not compute new percentages."
     )
 
     def __init__(self, llm: BaseLLM):
@@ -201,10 +226,12 @@ class Writer:
 
     def write(self, question: str, status: str, supported_claims: list[dict], rejected: list[dict], evidence: list[Evidence],
               hypothesis_status: list[dict], validator) -> tuple[FinalAnswer, dict]:
-        ev_list = "\n".join(f"{e.qid}: sql_hash={e.sql_hash} tables={e.tables} purpose={e.purpose[:120]}" for e in evidence if e.status == "ok")
+        citable = {cv["qid"] for c in supported_claims for cv in c.get("cited_values", [])}
+        ev_list = "\n".join(f"{e.qid}: sql_hash={e.sql_hash} tables={e.tables} purpose={e.purpose[:120]}"
+                            for e in evidence if e.status == "ok" and e.qid in citable) or "(none)"
         user = (f"QUESTION: {question}\nRUN STATUS: {status}\n\nSUPPORTED CLAIMS (critic-approved, numbers verified):\n"
                 f"{json.dumps(supported_claims, indent=1)}\n\nREJECTED OR WEAK CLAIMS:\n{json.dumps(rejected, indent=1)}\n\n"
-                f"HYPOTHESIS STATUS:\n{json.dumps(hypothesis_status, indent=1)}\n\nEVIDENCE (cite from here):\n{ev_list}")
+                f"HYPOTHESIS STATUS:\n{json.dumps(hypothesis_status, indent=1)}\n\nCITABLE EVIDENCE (cite only from here):\n{ev_list}")
         if status == "insufficient_evidence":
             user += "\n\nThe investigation was escalated: say clearly that the evidence is insufficient, what was ruled out, and what data would settle it."
         return self.llm.complete_json("writer", self.SYSTEM, user, FinalAnswer, validator=validator, max_tokens=2500)

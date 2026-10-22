@@ -22,7 +22,23 @@ def _num(v):
     return None
 
 
+_BOOL = {"true": 1.0, "false": 0.0, "yes": 1.0, "no": 0.0, "y": 1.0, "n": 0.0}
+
+
+def _boolish(v):
+    if isinstance(v, bool):
+        return float(v)
+    if isinstance(v, str) and v.strip().lower() in _BOOL:
+        return _BOOL[v.strip().lower()]
+    if isinstance(v, (int, float)) and v in (0, 1):
+        return float(v)
+    return None
+
+
 def value_matches(claimed, actual, rel_tol: float = 0.005) -> bool:
+    ba, bb = _boolish(claimed), _boolish(actual)
+    if ba is not None and bb is not None and (isinstance(claimed, (bool, str)) or isinstance(actual, (bool, str))):
+        return ba == bb  # True / 'true' / 'Y' / 1 are the same flag
     """Numbers match within rounding of the claimed precision or 0.5%; strings match exactly (case-insensitive).
     A number never matches a string (no prefix tricks such as '2' vs '2024-02-13')."""
     a, b = _num(claimed), _num(actual)
@@ -143,6 +159,24 @@ def _rewrite_number(text: str, old: float, new: float) -> str:
     return text
 
 
+_DOWN = re.compile(r"\b(lower|fell|fall|falls|drop|dropped|drops|declin\w*|decreas\w*|below|fewer|less|cut|reduc\w*|plung\w*|down)\b", re.I)
+_UP = re.compile(r"\b(higher|rose|rise|rises|increas\w*|above|more|jump\w*|surg\w*|up|grew|gain\w*)\b", re.I)
+
+
+def check_direction(claim: Claim) -> list[str]:
+    """A change claimed as a drop must have a negative change value, a rise a positive one."""
+    changes = [d for d in claim.derived if d.value is not None and re.search(r"pct|change|diff|delta", d.name, re.I)]
+    if len(changes) != 1:
+        return []
+    v = changes[0].value
+    down, up = bool(_DOWN.search(claim.statement)), bool(_UP.search(claim.statement))
+    if down and not up and v > 0:
+        return [f"the statement describes a decrease but {changes[0].name} = {v:+g} (an increase)"]
+    if up and not down and v < 0:
+        return [f"the statement describes an increase but {changes[0].name} = {v:+g} (a decrease)"]
+    return []
+
+
 def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> list[str]:
     """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
     recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
@@ -156,6 +190,15 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
         except ValueError as e:
             problems.append(f"derived {d.name}: {e}")
             continue
+        ph = "{" + d.name + "}"
+        if d.value is None or ph in claim.statement:
+            # placeholder style: the evaluator, not the model, supplies the number
+            fixed = round(actual, 2)
+            txt = f"{abs(fixed):,.0f}" if abs(fixed) >= 1000 else (f"{abs(fixed):.1f}" if abs(fixed) >= 10 else f"{abs(fixed):.2f}")
+            claim.statement = claim.statement.replace(ph, txt)
+            d.value = fixed
+            ok_values.append(abs(actual))
+            continue
         if _close(d.value, actual):
             ok_values.append(abs(actual))
         elif _within_rounding_band(d.value, actual):
@@ -167,6 +210,9 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
             ok_values.append(abs(actual))
         else:
             problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
+    problems += check_direction(claim)
+    for left in re.findall(r"\{[A-Za-z_]\w*\}", claim.statement):
+        problems.append(f"placeholder {left} has no derived value with that name")
     for p in [float(m) for m in _PCT.findall(claim.statement)]:
         if not any(_close(p, v) for v in ok_values):
             problems.append(f"{p:g}% in the statement is not recomputable from cited cells (declare it in derived with a formula)")
@@ -211,7 +257,7 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
     return Decision("escalate", "iteration cap or time budget reached without a supported explanation", supported)
 
 
-def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
+def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "") -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -225,13 +271,15 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                 problems.append(f"claim {i + 1}: {cit.qid} is not a successful query")
                 continue
             if cit.qid not in allowed_qids:
-                problems.append(f"claim {i + 1}: {cit.qid} was not used by any critic-supported claim")
+                problems.append(f"claim {i + 1}: {cit.qid} was not used by any critic-supported claim (you may cite only: {', '.join(sorted(allowed_qids)) or 'none'}; drop or rewrite this claim)")
             if cit.sql_hash != ev.sql_hash:
                 problems.append(f"claim {i + 1}: sql_hash for {cit.qid} must be {ev.sql_hash}")
             if cit.table.lower() not in [t.lower() for t in ev.tables]:
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
     problems += check_text_numbers(f"{ans.headline}\n{ans.answer}\n" + "\n".join(c.text for c in ans.claims),
                                    evidence, allowed_qids, extra_values)
+    problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
+                                 evidence, context)
     return problems
 
 
@@ -241,21 +289,15 @@ _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k
 
 
 def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
-    """Every number written in the final answer must be a cell of allowed evidence, a verified derived value, or a
-    percentage/ratio between two such cells (0.5 pp tolerance). Dates, years and small counts (<= 12) are exempt."""
+    """Every number written in the final answer must be a cell of a successful query or a derived value of a
+    critic-supported claim (re-evaluated from its formula). Dates, years and small counts (<= 12) are exempt."""
     # Any cell of a successful query is a real, recorded number; claims still may only CITE critic-supported queries.
     pool = [abs(float(x)) for x in extra_values]
     for q, ev in evidence.items():
         if ev and ev.status == "ok":
             for r in ev.rows:
                 pool += [abs(n) for n in (_num(v) for v in r) if n is not None]
-    pool = sorted(set(pool))[:400]
-    derived = set()
-    for i, a in enumerate(pool):
-        for b in pool:
-            if b and a != b:
-                derived.add(abs((a - b) / b * 100))
-                derived.add(a / b)
+    pool = sorted(set(pool))
     problems = []
     for m in _NUM_RE.finditer(_DATE_RE.sub(" ", text)):
         raw, suf = m.group(1), (m.group(2) or "").lower()
@@ -264,12 +306,42 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
             val *= 1000
         if not suf and "." not in raw and val <= 12:
             continue
-        cands = pool if suf in ("", "k") else list(pool) + list(derived)
+        cands = pool  # a % or x must be a verified derived value or a cell; no free pairwise ratios
         tol = (lambda c: abs(val - c) <= max(0.51, 0.005 * val)) if suf in ("%", "x", "×") else \
               (lambda c: abs(val - c) <= max(0.0051 * abs(c), 0.51 if "." not in raw else 0.0051) or (suf == "k" and abs(val - c) <= 500))
         if not any(tol(c) for c in cands):
             problems.append(f"the number '{m.group(0).strip()}' in the answer is not backed by cited evidence")
     return problems
+
+
+_MON = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+_DM_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|"
+                    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b|"
+                    r"\b20\d\d-(\d\d)-(\d\d)\b", re.I)
+
+
+def month_days(text: str) -> set[tuple[int, int]]:
+    out = set()
+    for m in _DM_RE.finditer(text):
+        if m.group(1):
+            out.add((_MON[m.group(2).lower()[:3]], int(m.group(1))))
+        elif m.group(3):
+            out.add((_MON[m.group(3).lower()[:3]], int(m.group(4))))
+        else:
+            out.add((int(m.group(5)), int(m.group(6))))
+    return out
+
+
+def check_text_dates(text: str, evidence: dict[str, Evidence], context: str = "") -> list[str]:
+    """Every calendar date written in the answer must appear in a query result, a data-quality note or the question."""
+    known = month_days(context)
+    for ev in evidence.values():
+        if ev.status == "ok":
+            for r in ev.rows:
+                for v in r:
+                    known |= month_days(str(v))
+    return [f"the date {m:02d}-{d:02d} in the answer does not appear in any query result or note"
+            for m, d in sorted(month_days(text) - known)]
 
 
 def drop_uncited(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str]) -> FinalAnswer:
