@@ -251,3 +251,91 @@ def test_neutral_placeholder_keeps_its_sign():
     c = _claim_txt("Trips on 28 Nov were {pct}% vs the baseline mean", VALS)
     c.derived = [DerivedValue(name="pct", formula=BASE)]
     assert check_derived_values(c) == [] and "-45.5%" in c.statement
+
+
+# ---- consistency: wording that the evidence contradicts (recorded sample #1, Thanksgiving 2024) ----
+from whybot.checks import check_consistency, check_dq_consistency, check_weather_wording  # noqa: E402
+
+THANKSGIVING_Q = "Why did NYC yellow taxi trips drop on Thanksgiving, 2024-11-28?"
+DQ_NOTES = ["2024-11-28: TPCDS date_dim.d_holiday=N but Nager.Date says Thanksgiving Day (national holiday) [DQ1 sha256:x]"]
+
+
+def wx(prcp_28=21.8, snow_28=0.0):
+    sql = "select obs_date, prcp_mm, snow_mm from whybot.nyc_weather_daily"
+    return {"Q3": Evidence(qid="Q3", hypothesis_id="H2", purpose="weather", iteration=1, sql=sql, sql_hash=sql_hash(sql),
+                           tables=["whybot.nyc_weather_daily"], status="ok", columns=["obs_date", "prcp_mm", "snow_mm", "tmax_c"],
+                           rows=[["2024-11-21", 0.0, 0.0, 9.4], ["2024-11-28", prcp_28, snow_28, 8.3]], row_count=2)}
+
+
+@pytest.mark.parametrize("text,bad", [
+    ("Data for 2024-11-28 is complete; weather conditions were mild.", True),   # the recorded contradiction
+    ("Mild weather on Thanksgiving did not explain the drop.", True),          # date comes from the question
+    ("It was a dry day on 2024-11-28.", True),
+    ("There was no rain on 2024-11-28.", True),
+    ("Clear skies on 2024-11-21 the week before.", False),                     # that day really was dry
+    ("Heavy rain (21.8 mm) fell on 2024-11-28.", False),
+    ("The weather was not mild: 21.8 mm of rain.", False),                     # negated
+    ("The evidence is clear and the drop was mild relative to 2023.", False),  # not weather words
+    ("Trips fell versus other Thursdays with no rain.", False),               # describes the comparison days
+])
+def test_benign_weather_words_must_match_recorded_precipitation(text, bad):
+    assert bool(check_weather_wording(text, wx(), THANKSGIVING_Q)) is bad
+
+
+def test_snow_makes_mild_wrong_and_threshold_is_respected():
+    assert check_weather_wording("Weather was mild on 2024-11-28.", wx(prcp_28=0.0, snow_28=12.0))
+    assert check_weather_wording("There was no snow on 2024-11-28.", wx(prcp_28=0.0, snow_28=12.0))
+    assert not check_weather_wording("Weather was mild on 2024-11-28.", wx(prcp_28=0.3))  # a trace is still mild
+    assert not check_weather_wording("Weather was mild on 2024-11-28.", {})               # no weather evidence, no verdict
+
+
+def test_weather_contradiction_rejects_the_claim_deterministically():
+    ev3 = wx()
+    c = Claim(cid="C5", hypothesis_id="H2", statement="Weather on 2024-11-28 was mild and dry.", direction="refutes",
+              cited_values=[CitedValue(qid="Q3", column="prcp_mm", value=21.8, row_hint="obs_date=2024-11-28")])
+    assert not check_claim_numbers(c, ev3, THANKSGIVING_Q).ok
+    c2 = c.model_copy(update={"statement": "On 2024-11-28 21.8 mm of rain fell."})
+    assert check_claim_numbers(c2, ev3, THANKSGIVING_Q).ok
+
+
+@pytest.mark.parametrize("text", [
+    "Data for 2024-11-28 exists and appears complete; no data-quality flags.",
+    "Data for 2024-11-28 is complete with no quality flags.",
+    "The data is free of data quality issues.",
+    "Data quality was clean.",
+])
+def test_no_dq_flags_cannot_coexist_with_dq_findings(text):
+    assert check_dq_consistency(text, DQ_NOTES)
+    assert check_dq_consistency(text, (), caveats=["Data quality: date_dim.d_holiday disagrees with Nager.Date"])
+    assert not check_dq_consistency(text, ())                       # nothing was flagged: the phrase is fine
+    assert not check_dq_consistency("Data for 2024-11-28 is complete.", DQ_NOTES)
+
+
+def test_final_answer_with_both_sample1_contradictions_is_rejected():
+    ev3 = wx()
+    ans = FinalAnswer(headline="Yellow taxi trips fell 45.5% on Thanksgiving 2024",
+                      answer="Data for 2024-11-28 is complete with no quality flags; weather conditions were mild.",
+                      recommendation="r", claims=[FinalClaim(text="Rain on 2024-11-28 was 21.8 mm.",
+                                                             citations=[Citation(qid="Q3", sql_hash=ev3["Q3"].sql_hash, table="t")])],
+                      caveats=[], confidence=0.8)
+    probs = validate_final(ans, ev3, {"Q3"}, context=THANKSGIVING_Q, dq_notes=DQ_NOTES)
+    assert any("mild" in p for p in probs) and any("quality flags" in p for p in probs)
+    fixed = ans.model_copy(update={"answer": "21.8 mm of rain fell on 2024-11-28; the TPCDS holiday flag was wrong for this date."})
+    assert not check_consistency(fixed.answer, ev3, THANKSGIVING_Q, DQ_NOTES)
+
+
+def test_zetaris_rows_normalise_boxed_java_values():
+    import json
+    from whybot.datasource.zetaris_jdbc import to_python
+
+    class Boolean(int):  # stands in for JPype's java.lang.Boolean, an int subclass
+        def __str__(self):
+            return "True" if self else "False"
+
+    class Long(int):
+        pass
+
+    row = [to_python(v) for v in (Boolean(1), Long(77244), 2.5, "x", None)]
+    assert row == [True, 77244, 2.5, "x", None]
+    assert [type(v) for v in row[:2]] == [bool, int]
+    assert [str(v) for v in json.loads(json.dumps(row))] == [str(v) for v in row]

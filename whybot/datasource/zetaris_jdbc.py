@@ -12,6 +12,29 @@ DRIVER_CLASS = "com.zetaris.lightning.jdbc.LightningDriver"
 DEFAULT_URL = "jdbc:zetaris:lightning@localhost:10000"
 
 
+def to_python(v):
+    """Turn JPype boxed Java values into plain Python ones.
+
+    jaydebeapi returns BOOLEAN and BIGINT columns as java.lang.Boolean / java.lang.Long. Those
+    subclass int, so str() gives "True" live but json.dumps() writes 1, and a replayed prompt
+    would differ from the recorded one. Normalising here keeps live, recorded and replayed rows identical.
+    """
+    if v is None or type(v) in (bool, int, float, str):
+        return v
+    name = type(v).__name__
+    if name.endswith("Boolean"):
+        return bool(v)
+    if isinstance(v, int):
+        return int(v)
+    if isinstance(v, float):
+        return float(v)
+    if name.endswith(("Long", "Integer", "Short", "Byte")):
+        return int(v)
+    if name.endswith(("Double", "Float")):
+        return float(v)
+    return str(v)
+
+
 def _find_java_home() -> str | None:
     if os.environ.get("JAVA_HOME") and Path(os.environ["JAVA_HOME"]).is_dir():
         return os.environ["JAVA_HOME"]
@@ -81,7 +104,7 @@ class ZetarisJDBCSource(DataSource):
             try:
                 cur.execute(sql)
                 cols = [d[0] for d in (cur.description or [])]
-                rows = [list(r) for r in cur.fetchall()] if cols else []
+                rows = [[to_python(v) for v in r] for r in cur.fetchall()] if cols else []
             finally:
                 self._active = None
                 try:

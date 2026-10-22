@@ -14,7 +14,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .agents import Analyst, Critic, Planner, SQLAgent, Writer
-from .checks import check_claim_numbers, decide_next, drop_uncited, result_sanity, tables_in_sql, validate_final
+from .checks import check_claim_numbers, check_consistency, decide_next, drop_uncited, result_sanity, tables_in_sql, validate_final
 from .config import ROOT, Settings
 from .datasource import DataSource, DataSourceError, guard_sql, make_datasource, sql_hash
 from .evidence import Evidence
@@ -106,6 +106,7 @@ class WhyBot:
         if self.s.sample_mode and os.environ.get("SAMPLE_LLM", "replay") != "live":
             llm = CassetteLLM(cpath, on_call=on_call)
             h = llm.header
+            self._recorded_recall = h.get("hmem_recall")
             tr.emit("Orchestrator", "llm_mode", status="info",
                     output_summary=f"SAMPLE_MODE REPLAY of live run {h.get('live_run_id')} recorded {h.get('recorded_at')} "
                                    f"(trace {h.get('trace')}); LLM and SQL outputs come from that run, the checks and branch policy re-execute",
@@ -152,6 +153,7 @@ class WhyBot:
         if not RUN_ID_RE.match(run_id):
             raise ValueError("invalid run_id: use letters, digits, '.', '_' or '-' (max 80 chars)")
         self._question, self._cassette, self._run_id = question, None, run_id
+        self._recorded_recall = None
         result = None
         t0 = time.time()
         deadline = t0 + self.s.run_timeout_s
@@ -296,7 +298,7 @@ class WhyBot:
             prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic
-            checks = {c.cid: check_claim_numbers(c, evidence) for c in claims.claims}
+            checks = {c.cid: check_claim_numbers(c, evidence, question) for c in claims.claims}
             for cid, ch in checks.items():
                 tr.emit("Critic", "number_check", output_summary=f"{cid}: {'PASS' if ch.ok else 'REJECT ' + '; '.join(ch.problems)}"[:400],
                         status="success" if ch.ok else "rejected", data={"cid": cid, "ok": ch.ok, "problems": ch.problems, "corrections": ch.corrections})
@@ -486,7 +488,17 @@ class WhyBot:
         return notes
 
     def _recall(self, mem, question, tr) -> tuple[str, list]:
+        if self._recorded_recall is not None:
+            # SAMPLE_MODE replay: H-MEM recall is an input to the agents like a SQL result, so the live run's recall is
+            # replayed (labelled) and the prompts match the live ones. New memories still go to the replay store.
+            hits = self._recorded_recall
+            tr.emit("Memory", "hmem.recall", target_agent="Planner", status="success",
+                    output_summary=f"RECORDED recall of the live run: {len(hits)} memories (threshold {self.s.hmem_threshold})"
+                    + (f"; top: {hits[0]['content'][:120]}" if hits else ""), data={"hits": hits, "recorded": True})
+            return self._recall_text(hits), hits
         if not mem:
+            if self._cassette is not None:
+                self._cassette.header["hmem_recall"] = []
             return "", []
         hits, seen = [], set()
         for q in (question, f"lesson SQL schema join filter {question}"):
@@ -500,7 +512,13 @@ class WhyBot:
         hits = hits[:6]
         tr.emit("Memory", "hmem.recall", target_agent="Planner", output_summary=f"{len(hits)} memories (threshold {self.s.hmem_threshold})"
                 + (f"; top: {hits[0]['content'][:120]}" if hits else ""), data={"hits": hits})
-        return "\n".join(f"- ({h['relevance']}) {h['content']}" for h in hits), hits
+        if self._cassette is not None:
+            self._cassette.header["hmem_recall"] = hits
+        return self._recall_text(hits), hits
+
+    @staticmethod
+    def _recall_text(hits) -> str:
+        return "\n".join(f"- ({h['relevance']}) {h['content']}" for h in hits)
 
     def _carry(self, mem, tr, it, summary, completed, remaining, previous, decisions="") -> str:
         chunk = (f"Iteration {it} summary: {summary}\n[STATE_CHECKPOINT]\nCOMPLETED: {completed}\nREMAINING: {remaining}\n"
@@ -570,7 +588,8 @@ class WhyBot:
                     verified_derived.append(d.value)
 
         def validator(ans: FinalAnswer) -> list[str]:
-            probs = validate_final(ans, evidence, allowed, verified_derived, context=question + "\n" + "\n".join(dq_notes))
+            probs = validate_final(ans, evidence, allowed, verified_derived, context=question + "\n" + "\n".join(dq_notes),
+                                   dq_notes=dq_notes)
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []
             return probs
@@ -582,8 +601,10 @@ class WhyBot:
             return ans
         except LLMError as e:
             tr.emit("Writer", "validation_failed", output_summary=str(e)[:300], status="error")
-        # Deterministic fallback: render the verified claims directly, with their citations.
+        # Deterministic fallback: render the verified claims directly, with their citations, minus any statement whose
+        # wording contradicts the evidence or the run's data-quality findings.
         from .schemas import Citation, FinalClaim
+        supported = [c for c in supported if not check_consistency(c["statement"], evidence, question, dq_notes)]
         fc = [FinalClaim(text=c["statement"], citations=[Citation(qid=q, sql_hash=evidence[q].sql_hash, table=evidence[q].primary_table)
                                                           for q in sorted({cv["qid"] for cv in c["cited_values"]})]) for c in supported]
         lead = supported[0]["statement"] if supported else ""
@@ -632,7 +653,7 @@ def render_markdown(ans: FinalAnswer, evidence: dict[str, Evidence], source_labe
     lines = [f"## {ans.headline}", "", ans.answer, "", f"**Recommendation:** {ans.recommendation}", "", "### Evidence-backed claims"]
     for i, c in enumerate(ans.claims, 1):
         cites = "; ".join(f"[{x.qid} · {x.sql_hash} · {x.table}]" for x in c.citations)
-        lines.append(f"{i}. {c.text} — {cites}")
+        lines.append(f"{i}. {c.text} {cites}")
     if ans.caveats:
         lines += ["", "### Caveats"] + [f"- {c}" for c in ans.caveats]
     lines += ["", f"_Confidence {ans.confidence:.2f}. Data source: {source_label}._"]
