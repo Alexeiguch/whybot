@@ -195,6 +195,9 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
             # placeholder style: the evaluator, not the model, supplies the number
             fixed = round(actual, 2)
             txt = f"{abs(fixed):,.0f}" if abs(fixed) >= 1000 else (f"{abs(fixed):.1f}" if abs(fixed) >= 10 else f"{abs(fixed):.2f}")
+            rest = claim.statement.replace(ph, "")
+            if fixed != 0 and not (_DOWN.search(rest) or _UP.search(rest)):
+                txt = ("+" if fixed > 0 else "-") + txt  # neutral wording keeps the sign: "were -45.5% vs ..."
             claim.statement = claim.statement.replace(ph, txt)
             d.value = fixed
             ok_values.append(abs(actual))

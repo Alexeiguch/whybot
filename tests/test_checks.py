@@ -243,3 +243,11 @@ def test_text_percentages_need_a_verified_value():
                  rows=[["2024-12-07", 145899], ["2024-12-14", 159150], ["2024-12-21", 131279], ["2024-12-28", 88213]], row_count=4, tables=["t"])
     assert check_text_numbers("trips were 15% below the baseline", {"Q1": e}, {"Q1"}, [0.15])
     assert check_text_numbers("trips were 0.15% above the baseline", {"Q1": e}, {"Q1"}, [0.15]) == []
+
+
+def test_neutral_placeholder_keeps_its_sign():
+    from whybot.checks import check_derived_values
+    from whybot.schemas import DerivedValue
+    c = _claim_txt("Trips on 28 Nov were {pct}% vs the baseline mean", VALS)
+    c.derived = [DerivedValue(name="pct", formula=BASE)]
+    assert check_derived_values(c) == [] and "-45.5%" in c.statement
