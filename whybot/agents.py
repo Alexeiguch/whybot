@@ -131,7 +131,10 @@ class Analyst:
         "Rules: cited_values are raw cells copied from a returned row (never an average or total you computed: put those in derived); "
         "one metric per claim (a second metric needs its own claim and its own v-numbering); to claim something is ABSENT cite a "
         "COUNT cell equal to 0 or say it in words without a row_hint, never a row_hint for a row that is not in the result; "
-        "if a query returned no rows or NULLs, do not draft a claim from it. The data only covers 2024-04-01..2025-02-28."
+        "if a query returned no rows or NULLs, do not draft a claim from it. The data only covers 2024-04-01..2025-02-28. "
+        "The question's premise may be wrong: ALWAYS draft one H0 claim that states the measured change neutrally with its sign, "
+        "e.g. 'Trips on 2024-12-21 were {pct_change_vs_baseline}% vs the mean of the other Saturdays' (WhyBot fills in a signed value), "
+        "and if the change is small (under about 5%) or opposite to the question, add a claim saying the premise is not supported by the data."
     )
 
     def __init__(self, llm: BaseLLM):
@@ -177,6 +180,8 @@ class Critic:
         "A fare or zone mix shift describes HOW a change happened, not WHY: never accept it as the root cause while an external "
         "driver (weather, holiday) is untested or its query failed; request that test instead. When two drivers coincide "
         "(e.g. holiday and rain on the same day), say so and weigh them against baselines that isolate each one. "
+        "If H0 shows no material change (under about 5%) or a change opposite to the question, the correct answer is that the "
+        "premise is false: mark the neutral H0 claim supported, mark causal hypotheses refuted or inconclusive, and decide accept. "
         "Derived values named *pct* are already percentages: 0.15 means +0.15 percent (no change), not 15%. Read the sign and "
         "size of every derived value and check the statement's wording matches it; a change under about 5% is not a drop."
     )
@@ -210,7 +215,10 @@ class Writer:
         "You are the Writer in WhyBot. Produce the final answer for a research analyst using ONLY critic-supported claims. "
         "Every claim must carry citations {qid, sql_hash, table} copied exactly from the evidence list. "
         "Give a one-line headline, a short answer, an actionable recommendation, honest caveats (rejected or untested hypotheses, "
-        "data limitations) and a calibrated confidence. Add 0-3 reusable lessons for future investigations (schema quirks, filters, joins)."
+        "data limitations) and a calibrated confidence. Add 0-3 reusable lessons for future investigations (schema quirks, filters, joins). "
+        "Cite ONLY the queries in the CITABLE EVIDENCE list. If the supported claims show the question's premise is false (no "
+        "material change, or the opposite change), say so plainly in the headline. Every number you write must appear in a "
+        "supported claim; do not compute new percentages."
     )
 
     def __init__(self, llm: BaseLLM):
@@ -218,10 +226,12 @@ class Writer:
 
     def write(self, question: str, status: str, supported_claims: list[dict], rejected: list[dict], evidence: list[Evidence],
               hypothesis_status: list[dict], validator) -> tuple[FinalAnswer, dict]:
-        ev_list = "\n".join(f"{e.qid}: sql_hash={e.sql_hash} tables={e.tables} purpose={e.purpose[:120]}" for e in evidence if e.status == "ok")
+        citable = {cv["qid"] for c in supported_claims for cv in c.get("cited_values", [])}
+        ev_list = "\n".join(f"{e.qid}: sql_hash={e.sql_hash} tables={e.tables} purpose={e.purpose[:120]}"
+                            for e in evidence if e.status == "ok" and e.qid in citable) or "(none)"
         user = (f"QUESTION: {question}\nRUN STATUS: {status}\n\nSUPPORTED CLAIMS (critic-approved, numbers verified):\n"
                 f"{json.dumps(supported_claims, indent=1)}\n\nREJECTED OR WEAK CLAIMS:\n{json.dumps(rejected, indent=1)}\n\n"
-                f"HYPOTHESIS STATUS:\n{json.dumps(hypothesis_status, indent=1)}\n\nEVIDENCE (cite from here):\n{ev_list}")
+                f"HYPOTHESIS STATUS:\n{json.dumps(hypothesis_status, indent=1)}\n\nCITABLE EVIDENCE (cite only from here):\n{ev_list}")
         if status == "insufficient_evidence":
             user += "\n\nThe investigation was escalated: say clearly that the evidence is insufficient, what was ruled out, and what data would settle it."
         return self.llm.complete_json("writer", self.SYSTEM, user, FinalAnswer, validator=validator, max_tokens=2500)
