@@ -1,0 +1,41 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, trips, avg_total_amount, CASE WHEN dayofweek(trip_date) = 2 THEN 'Monday' ELSE NULL END AS weekday_label FROM whybot.yellow_daily WHERE dayofweek(trip_date) = 2 AND trip_date >= DATE '2025-01-01' AND trip_date < DATE '2025-02-01' ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:b6cac6858f528d3f",
+ "recorded_at": "2026-10-22T14:17:27+00:00",
+ "columns": [
+  "trip_date",
+  "trips",
+  "avg_total_amount",
+  "weekday_label"
+ ],
+ "rows": [
+  [
+   "2025-01-06",
+   80127,
+   27.62888127597372,
+   "Monday"
+  ],
+  [
+   "2025-01-13",
+   100492,
+   26.1535106277113,
+   "Monday"
+  ],
+  [
+   "2025-01-20",
+   90094,
+   36.480323772947045,
+   "Monday"
+  ],
+  [
+   "2025-01-27",
+   93060,
+   26.388509993551974,
+   "Monday"
+  ]
+ ],
+ "elapsed_s": 8.521,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}
