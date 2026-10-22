@@ -21,6 +21,12 @@ from whybot.llm import NvidiaLLM  # noqa: E402
 
 EX1 = json.loads((ROOT / "input_examples" / "example_1.json").read_text())["input"]["query"]
 REPLAY = "Replay (recorded real run, no keys)"
+# Fake key strings are assembled at runtime so no literal in this file looks like an NVIDIA key to a secret scanner.
+KEY_PREFIX = "nv" + "api-"
+
+
+def fake_key(tag: str) -> str:
+    return KEY_PREFIX + "FAKE-" + tag + "-not-a-key"
 LIVE = "Live (your NVIDIA key)"
 
 
@@ -92,7 +98,7 @@ def test_live_path_streams_labels_and_scrubs_the_key(monkeypatch, tmp_path):
     import playground.live_llm as live_llm
     from whybot.llm import BaseLLM, LLMError
 
-    secret = "nvapi-SMOKE-not-a-real-key-123456"
+    secret = fake_key("smoke")
 
     class EchoKeyLLM(BaseLLM):
         def __init__(self, settings, api_key, on_call=None):
@@ -119,10 +125,10 @@ def test_live_path_streams_labels_and_scrubs_the_key(monkeypatch, tmp_path):
 
 def test_keyed_llm_keeps_key_out_of_env_and_matches_parent(monkeypatch):
     s = Settings()
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-parent-dummy-0000")
+    monkeypatch.setenv("NVIDIA_API_KEY", fake_key("parent"))
     parent = NvidiaLLM(s)
     monkeypatch.delenv("NVIDIA_API_KEY")
-    child = KeyedNvidiaLLM(s, "nvapi-visitor-dummy-1111")
+    child = KeyedNvidiaLLM(s, fake_key("visitor"))
     assert set(vars(parent)) == set(vars(child)), "NvidiaLLM gained attributes: update playground/live_llm.py"
     assert "NVIDIA_API_KEY" not in os.environ
     assert "visitor" not in repr(child)
@@ -172,7 +178,7 @@ def test_replay_end_to_end_through_the_api(monkeypatch):
     assert answer.startswith("### ") and "RECORDED replay" in answer and "[Q" in answer
     lines = Path(trace).read_text().splitlines()
     assert lines and json.loads(lines[-1])["action"] == "finish"
-    assert "nvapi-" not in Path(trace).read_text()
+    assert KEY_PREFIX not in Path(trace).read_text()
 
 
 def test_rejected_weak_verdict_shows_as_reject_and_timeline_shows_seq():
@@ -204,3 +210,18 @@ def test_playground_refuses_reserved_or_malformed_run_ids():
         with pytest.raises(RunIdError):
             next(core.stream_live(EX1, bad, "dummy"))
     assert core.new_run_id("replay").startswith("pg-replay-")
+
+
+
+def test_replay_drift_and_newer_check_findings_are_badged():
+    v = core.RunView(mode="replay", question=EX1, run_id="pg-test")
+    v.add({"agent_name": "Orchestrator", "action": "llm_mode", "status": "info", "data": {"mode": "replay", "live_run_id": "recorded-x"}})
+    assert "DRIFT" not in v.banner()
+    v.add({"agent_name": "Writer", "action": "replay_drift", "status": "warning", "seq": 57, "output_summary": "DRIFT: the writer prompt changed",
+           "data": {"role": "writer"}})
+    v.add({"agent_name": "Orchestrator", "action": "shadow_checks", "status": "warning", "seq": 120, "output_summary": "checks v2 would also flag",
+           "data": {"findings": ["Writer draft: the number '12%' is not backed"]}})
+    b = v.banner()
+    assert "DRIFT: prompt changed since recording" in b and "(writer)" in b
+    assert "Newer checks would flag 1 item(s)" in b
+    assert "DRIFT" in v.timeline() and "NEWER CHECKS" in v.timeline()
