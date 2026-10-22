@@ -51,5 +51,5 @@ The smoke tests run fully offline. They cover the UI build, the missing-fixtures
 
 - Replay covers the recorded sample questions only.
 - In Live mode without `ZETARIS_*`, the SQL agent can only reuse recorded queries. A new question will mostly end in "insufficient evidence", and the run says so.
-- A live run takes about 4 to 8 minutes. Two live runs can run at once (`PLAYGROUND_MAX_LIVE_RUNS`).
+- A live run takes about 5 to 13 minutes (291 s, 431 s and 752 s in the recorded runs). Two live runs can run at once (`PLAYGROUND_MAX_LIVE_RUNS`).
 - The playground adds no agent logic. Everything comes from the `whybot` package and its API.
