@@ -222,3 +222,24 @@ def test_placeholders_are_filled_by_the_evaluator():
 def test_boolean_flags_match_across_encodings():
     assert value_matches("True", 1) and value_matches("False", 0) and value_matches(True, "true") and value_matches("Y", 1)
     assert not value_matches("True", 0) and not value_matches("2", "2024-02-13")
+
+
+def test_direction_of_change_must_match_the_sign():
+    from whybot.checks import check_derived_values
+    from whybot.schemas import DerivedValue
+    snow = [131279, 145899, 159150, 88213]   # real Saturdays Dec 2024: 21 Dec vs 7/14/28 Dec -> +0.15%
+    c = _claim_txt("Trips on 21 Dec were lower than the other Saturdays", snow)
+    c.derived = [DerivedValue(name="pct_change_vs_baseline", formula=BASE)]
+    probs = check_derived_values(c)
+    assert probs and "decrease" in probs[0]
+    c2 = _claim_txt("Trips fell {pct}% vs the baseline", VALS)
+    c2.derived = [DerivedValue(name="pct", formula=BASE)]
+    assert check_derived_values(c2) == []
+
+
+def test_text_percentages_need_a_verified_value():
+    from whybot.checks import check_text_numbers
+    e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
+                 rows=[["2024-12-07", 145899], ["2024-12-14", 159150], ["2024-12-21", 131279], ["2024-12-28", 88213]], row_count=4, tables=["t"])
+    assert check_text_numbers("trips were 15% below the baseline", {"Q1": e}, {"Q1"}, [0.15])
+    assert check_text_numbers("trips were 0.15% above the baseline", {"Q1": e}, {"Q1"}, [0.15]) == []

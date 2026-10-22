@@ -176,7 +176,9 @@ class Critic:
         "catalog) when a specific extra test would settle it; decision=insufficient_evidence if more SQL cannot help. "
         "A fare or zone mix shift describes HOW a change happened, not WHY: never accept it as the root cause while an external "
         "driver (weather, holiday) is untested or its query failed; request that test instead. When two drivers coincide "
-        "(e.g. holiday and rain on the same day), say so and weigh them against baselines that isolate each one."
+        "(e.g. holiday and rain on the same day), say so and weigh them against baselines that isolate each one. "
+        "Derived values named *pct* are already percentages: 0.15 means +0.15 percent (no change), not 15%. Read the sign and "
+        "size of every derived value and check the statement's wording matches it; a change under about 5% is not a drop."
     )
 
     def __init__(self, llm: BaseLLM):

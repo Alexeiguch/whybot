@@ -159,6 +159,24 @@ def _rewrite_number(text: str, old: float, new: float) -> str:
     return text
 
 
+_DOWN = re.compile(r"\b(lower|fell|fall|falls|drop|dropped|drops|declin\w*|decreas\w*|below|fewer|less|cut|reduc\w*|plung\w*|down)\b", re.I)
+_UP = re.compile(r"\b(higher|rose|rise|rises|increas\w*|above|more|jump\w*|surg\w*|up|grew|gain\w*)\b", re.I)
+
+
+def check_direction(claim: Claim) -> list[str]:
+    """A change claimed as a drop must have a negative change value, a rise a positive one."""
+    changes = [d for d in claim.derived if d.value is not None and re.search(r"pct|change|diff|delta", d.name, re.I)]
+    if len(changes) != 1:
+        return []
+    v = changes[0].value
+    down, up = bool(_DOWN.search(claim.statement)), bool(_UP.search(claim.statement))
+    if down and not up and v > 0:
+        return [f"the statement describes a decrease but {changes[0].name} = {v:+g} (an increase)"]
+    if up and not down and v < 0:
+        return [f"the statement describes an increase but {changes[0].name} = {v:+g} (a decrease)"]
+    return []
+
+
 def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> list[str]:
     """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
     recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
@@ -192,6 +210,7 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
             ok_values.append(abs(actual))
         else:
             problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
+    problems += check_direction(claim)
     for left in re.findall(r"\{[A-Za-z_]\w*\}", claim.statement):
         problems.append(f"placeholder {left} has no derived value with that name")
     for p in [float(m) for m in _PCT.findall(claim.statement)]:
@@ -270,21 +289,15 @@ _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k
 
 
 def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
-    """Every number written in the final answer must be a cell of allowed evidence, a verified derived value, or a
-    percentage/ratio between two such cells (0.5 pp tolerance). Dates, years and small counts (<= 12) are exempt."""
+    """Every number written in the final answer must be a cell of a successful query or a derived value of a
+    critic-supported claim (re-evaluated from its formula). Dates, years and small counts (<= 12) are exempt."""
     # Any cell of a successful query is a real, recorded number; claims still may only CITE critic-supported queries.
     pool = [abs(float(x)) for x in extra_values]
     for q, ev in evidence.items():
         if ev and ev.status == "ok":
             for r in ev.rows:
                 pool += [abs(n) for n in (_num(v) for v in r) if n is not None]
-    pool = sorted(set(pool))[:400]
-    derived = set()
-    for i, a in enumerate(pool):
-        for b in pool:
-            if b and a != b:
-                derived.add(abs((a - b) / b * 100))
-                derived.add(a / b)
+    pool = sorted(set(pool))
     problems = []
     for m in _NUM_RE.finditer(_DATE_RE.sub(" ", text)):
         raw, suf = m.group(1), (m.group(2) or "").lower()
@@ -293,7 +306,7 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
             val *= 1000
         if not suf and "." not in raw and val <= 12:
             continue
-        cands = pool if suf in ("", "k") else list(pool) + list(derived)
+        cands = pool  # a % or x must be a verified derived value or a cell; no free pairwise ratios
         tol = (lambda c: abs(val - c) <= max(0.51, 0.005 * val)) if suf in ("%", "x", "×") else \
               (lambda c: abs(val - c) <= max(0.0051 * abs(c), 0.51 if "." not in raw else 0.0051) or (suf == "k" and abs(val - c) <= 500))
         if not any(tol(c) for c in cands):
