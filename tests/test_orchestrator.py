@@ -128,11 +128,12 @@ def test_planner_invalid_tables_are_rejected_and_retried(settings):
 
 
 def test_no_secrets_in_trace(settings, monkeypatch):
-    monkeypatch.setenv("NVIDIA_API_KEY", "nvapi-SUPERSECRETVALUE123")
-    llm = FakeLLM({"planner": ["not json nvapi-SUPERSECRETVALUE123", PLAN], "sql": [SQL_TRIPS, SQL_SNOW_OK], "analyst": [CLAIMS],
+    fake = "nv" + "api-" + "FAKESECRETVALUE123"   # assembled at runtime: no key-shaped literal in the source
+    monkeypatch.setenv("NVIDIA_API_KEY", fake)
+    llm = FakeLLM({"planner": ["not json " + fake, PLAN], "sql": [SQL_TRIPS, SQL_SNOW_OK], "analyst": [CLAIMS],
                    "critic": [critic("accept")], "writer": [writer_for([("Q1", sql_hash(SQL_TRIPS["sql"] + " LIMIT 500"), "NY_TAXI.yellow_tripdata")])]})
     res = WhyBot(settings, llm=llm, datasource=FakeSource(routes()), use_meterless=False, echo=False).run("why?")
-    assert "SUPERSECRETVALUE" not in (settings.logs_dir / f"{res['run_id']}.jsonl").read_text()
+    assert "FAKESECRETVALUE" not in (settings.logs_dir / f"{res['run_id']}.jsonl").read_text()
 
 
 def test_structured_error_when_source_unavailable(settings):

@@ -253,8 +253,14 @@ class CassetteLLM(BaseLLM):
     def save(self, question: str):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps({"question": question, "live_run_id": self.run_id, "trace": f"logs/{self.run_id}.jsonl",
-                                         "recorded_at": _now(), **{k: v for k, v in self.header.items() if k == "hmem_recall"},
+                                         "recorded_at": _now(), "checks_version": _checks_version(),
+                                         **{k: v for k, v in self.header.items() if k == "hmem_recall"},
                                          "calls": self.recorded}, indent=1))
+
+
+def _checks_version() -> int:
+    from .checks import CHECKS_VERSION
+    return CHECKS_VERSION
 
 
 def cassette_path(fixtures_dir, question: str):

@@ -56,3 +56,69 @@ def test_at_least_one_recorded_run_has_a_critic_reject_then_retry():
         retried = any(e["action"] == "branch" and e["status"] == "retry" for e in ev)
         found |= rejected and retried
     assert found
+
+
+def _replay(ex_name, tmp_path, monkeypatch, fixtures=None):
+    for k in ("NVIDIA_API_KEY", "SAMPLE_LLM", "ZETARIS_PASSWORD", "REPLAY_STRICT"):
+        monkeypatch.delenv(k, raising=False)
+    ex = json.loads((ROOT / "input_examples" / ex_name).read_text())
+    s = Settings()
+    s.sample_mode, s.data_source = True, "replay"
+    s.logs_dir = tmp_path
+    s.fixtures_dir = fixtures or ROOT / "fixtures" / "recorded"
+    s.meterless_data_dir = tmp_path / ".meterless"
+    res = WhyBot(s, use_meterless=False, echo=False).run(ex["input"]["query"], run_id="t-" + ex["run_id"])
+    return res, [json.loads(l) for l in Path(res["log_file"]).read_text().splitlines()]
+
+
+def test_replay_reports_what_the_current_checks_would_add(tmp_path, monkeypatch):
+    """Run #3 was recorded with checks v1. Its replay keeps v1 (so the prompts match) and reports, without acting on it,
+    that v2 rejects the '~12%' (backed only by a zone id) and claim 4's 'higher than the other three Mondays'."""
+    res, events = _replay("example_3.json", tmp_path, monkeypatch)
+    shadow = [e for e in events if e["action"] == "shadow_checks"]
+    assert len(shadow) == 1 and shadow[0]["status"] == "warning"
+    found = " ".join(shadow[0]["data"]["findings"])
+    assert "'12%'" in found and "higher than the other" in found and "5.53" in found
+    assert res["status"] == "insufficient_evidence"
+
+
+def test_replay_drift_is_a_visible_warning_and_strict_mode_fails(tmp_path, monkeypatch):
+    import shutil
+    fx = tmp_path / "fx"
+    shutil.copytree(ROOT / "fixtures" / "recorded", fx)
+    from whybot.llm import cassette_path
+    ex = json.loads((ROOT / "input_examples" / "example_1.json").read_text())
+    cp = cassette_path(fx, ex["input"]["query"])
+    data = json.loads(cp.read_text())
+    data["calls"][0]["prompt_sha"] = "0" * 16          # as if the Planner prompt had changed since recording
+    cp.write_text(json.dumps(data))
+    res, events = _replay("example_1.json", tmp_path / "a", monkeypatch, fx)
+    drift = [e for e in events if e["action"] == "replay_drift"]
+    assert len(drift) == 1 and drift[0]["status"] == "warning" and drift[0]["agent_name"] == "Planner"
+    assert res["status"] == "answered"
+    monkeypatch.setenv("REPLAY_STRICT", "true")
+    ex = json.loads((ROOT / "input_examples" / "example_1.json").read_text())
+    s = Settings()
+    s.sample_mode, s.data_source, s.logs_dir, s.fixtures_dir = True, "replay", tmp_path / "b", fx
+    s.meterless_data_dir = tmp_path / "b" / ".m"
+    strict = WhyBot(s, use_meterless=False, echo=False).run(ex["input"]["query"], run_id="t-strict")
+    assert strict["status"] == "error" and "REPLAY_STRICT" in strict["error"]["message"]
+
+
+def test_new_recordings_store_the_checks_version(tmp_path):
+    from whybot.checks import CHECKS_VERSION
+    from whybot.llm import BaseLLM, CassetteLLM
+
+    class Inner(BaseLLM):
+        def model_for(self, role):
+            return "fake"
+
+        def chat(self, role, messages, *, max_tokens=4096, temperature=0.2):
+            return "{}", {"model": "fake", "latency_s": 0.0}
+
+    cas = CassetteLLM(tmp_path / "c.json", inner=Inner(), run_id="recorded-x")
+    cas.chat("planner", [{"role": "user", "content": "q"}])
+    cas.save("q")
+    data = json.loads((tmp_path / "c.json").read_text())
+    assert data["checks_version"] == CHECKS_VERSION and len(data["calls"]) == 1
+    assert CassetteLLM(tmp_path / "c.json").header.get("checks_version") == CHECKS_VERSION

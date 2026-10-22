@@ -8,6 +8,15 @@ from .evidence import Evidence
 from .schemas import Claim, CriticReport, FinalAnswer
 
 
+# Version of the deterministic checks. A SAMPLE_MODE replay runs the checks at the version its cassette was recorded
+# with (cassettes without a version are 1), so the replayed prompts stay identical, and reports what the current
+# checks would add as a shadow_checks event. Live runs always use CHECKS_VERSION.
+#   1: checks as of the recorded samples
+#   2: a % or Nx must match a derived value or a rate column of a citable query; comparisons such as "higher than the
+#      other three Mondays" are checked against the cited rows
+CHECKS_VERSION = 2
+
+
 def _num(v):
     if isinstance(v, bool):
         return None
@@ -63,7 +72,7 @@ class NumericCheck:
     corrections: list[str] = field(default_factory=list)
 
 
-def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "") -> NumericCheck:
+def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "", version: int = CHECKS_VERSION) -> NumericCheck:
     """Every cited value must appear in the named column of the named, successful query result, and benign weather
     wording must not describe a day the weather evidence shows as wet or snowy. ('No data-quality flags' is checked on
     the final answer, where the run's data-quality caveat is rendered.)"""
@@ -84,20 +93,28 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
             problems.append(f"{cv.qid} has no column {cv.column!r} (has {', '.join(ev.columns)})")
             continue
         rows = ev.rows
-        if cv.row_hint and "=" in cv.row_hint:
-            k, _, v = cv.row_hint.partition("=")
-            ki = cols.get(k.strip().lower())
-            if ki is not None:
-                v = v.strip().strip("'\"")
-                rows = [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
-                if not rows:
-                    problems.append(f"{cv.qid}: no row matches {cv.row_hint}")
-                    continue
+        hint = (cv.row_hint or "").strip()
+        if not hint and len(ev.rows) > 1 and len({str(r[idx]) for r in ev.rows}) > 1:
+            problems.append(f"{cv.qid}: row_hint is required when the result has several rows")
+            continue
+        if hint:
+            k, eq, v = hint.partition("=")
+            ki = cols.get(k.strip().lower()) if eq else None
+            if ki is None:  # never fall back to "any row": a bad hint must not widen the match
+                problems.append(f"{cv.qid}: row_hint {hint!r} must be <column>=<value> using a returned column ({', '.join(ev.columns)})")
+                continue
+            v = v.strip().strip("'\"")
+            rows = [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
+            if not rows:
+                problems.append(f"{cv.qid}: no row matches {cv.row_hint}")
+                continue
         if not any(value_matches(cv.value, r[idx]) for r in rows):
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
     corrections: list[str] = []
     problems += check_derived_values(claim, corrections)
     problems += check_weather_wording(claim.statement, evidence, context)
+    if version >= 2:
+        problems += check_comparisons(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
     return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
@@ -264,7 +281,7 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
 
 
 def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "",
-                   dq_notes=()) -> list[str]:
+                   dq_notes=(), version: int = CHECKS_VERSION) -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -283,8 +300,12 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                 problems.append(f"claim {i + 1}: sql_hash for {cit.qid} must be {ev.sql_hash}")
             if cit.table.lower() not in [t.lower() for t in ev.tables]:
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
-    problems += check_text_numbers(f"{ans.headline}\n{ans.answer}\n" + "\n".join(c.text for c in ans.claims),
-                                   evidence, allowed_qids, extra_values)
+    problems += check_text_numbers("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
+                                   evidence, allowed_qids, extra_values, strict_rates=version >= 2)
+    if version >= 2:
+        for i, c in enumerate(ans.claims):
+            problems += [f"claim {i + 1}: {p}" for p in check_comparisons(c.text, evidence, {x.qid for x in c.citations})]
+        problems += check_comparisons("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
                                  evidence, context)
     prose = "\n".join([ans.headline, ans.answer, ans.recommendation, *(c.text for c in ans.claims)])
@@ -297,30 +318,97 @@ _DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2
 _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k\b|%|x\b|×)?", re.I)
 
 
-def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
-    """Every number written in the final answer must be a cell of a successful query or a derived value of a
-    critic-supported claim (re-evaluated from its formula). Dates, years and small counts (<= 12) are exempt."""
-    # Any cell of a successful query is a real, recorded number; claims still may only CITE critic-supported queries.
-    pool = [abs(float(x)) for x in extra_values]
+_RATE_COL = re.compile(r"pct|percent|ratio|share|change|chg|diff|delta|rate", re.I)
+# "(7, 14, 28)" after "December Saturdays" lists days of the month, not measurements
+_DAY_LIST = re.compile(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+[A-Za-z]+){0,2}\s*\(\s*\d{1,2}(?:\s*(?:,|and|&)\s*\d{1,2})+\s*\)", re.I)
+# "the ±5% threshold" is an analyst-chosen tolerance, not a measured value
+_TOLERANCE = re.compile(r"(?:±|\+/-)\s?\d+(?:\.\d+)?\s?%")
+
+
+def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True) -> list[str]:
+    """Every number written in the final answer (headline, answer, claims, recommendation and caveats) must be backed
+    by evidence. A % or Nx must be a derived value of a critic-supported claim (re-evaluated from its formula) or a
+    cell of a percentage or ratio column of a query the answer may cite (allowed_qids), never an arbitrary cell that
+    happens to be close (a zone id of 12 does not back "up ~12%"). Any other number must be a cell of a successful
+    query or a verified derived value. Dates, day-of-month lists, +/- tolerances and small counts (<= 12) are exempt."""
+    derived = [abs(float(x)) for x in extra_values if x is not None]
+    cells, rate_cells = [], []
     for q, ev in evidence.items():
-        if ev and ev.status == "ok":
-            for r in ev.rows:
-                pool += [abs(n) for n in (_num(v) for v in r) if n is not None]
-    pool = sorted(set(pool))
+        if not ev or ev.status != "ok":
+            continue
+        rate_idx = {i for i, c in enumerate(ev.columns) if _RATE_COL.search(c)} if q in allowed_qids else set()
+        for r in ev.rows:
+            for i, v in enumerate(r):
+                n = _num(v)
+                if n is not None:
+                    cells.append(abs(n))
+                    if i in rate_idx:
+                        rate_cells.append(abs(n))
+    plain_pool = sorted(set(derived + cells))
+    rate_pool = sorted(set(derived + rate_cells)) if strict_rates else plain_pool
+    text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
     problems = []
-    for m in _NUM_RE.finditer(_DATE_RE.sub(" ", text)):
+    for m in _NUM_RE.finditer(text):
         raw, suf = m.group(1), (m.group(2) or "").lower()
         val = float(raw.replace(",", ""))
         if suf == "k":
             val *= 1000
         if not suf and "." not in raw and val <= 12:
             continue
-        cands = pool  # a % or x must be a verified derived value or a cell; no free pairwise ratios
-        tol = (lambda c: abs(val - c) <= max(0.51, 0.005 * val)) if suf in ("%", "x", "×") else \
-              (lambda c: abs(val - c) <= max(0.0051 * abs(c), 0.51 if "." not in raw else 0.0051) or (suf == "k" and abs(val - c) <= 500))
+        if suf in ("%", "x", "\u00d7"):
+            cands = rate_pool
+            def tol(c):
+                return abs(val - c) <= max(0.51, 0.005 * val)
+        else:
+            cands = plain_pool
+            def tol(c):
+                return abs(val - c) <= max(0.0051 * abs(c), 0.51 if "." not in raw else 0.0051) or (suf == "k" and abs(val - c) <= 500)
         if not any(tol(c) for c in cands):
             problems.append(f"the number '{m.group(0).strip()}' in the answer is not backed by cited evidence")
     return problems
+
+
+_CMP = re.compile(r"\b(?P<dir>higher|greater|more|above|larger|longer|lower|less|fewer|below|smaller|shorter)\s+than\s+"
+                  r"(?:on\s+|for\s+|in\s+|at\s+)?(?:(?:all|each|every|any)\s+(?:of\s+)?)?(?:the\s+|those\s+)?"
+                  r"(?:other|remaining|rest)\b", re.I)
+_CMP_UP = {"higher", "greater", "more", "above", "larger", "longer"}
+_CMP_NEG = re.compile(r"\b(?:not|n't|never|no)\b(?:\W+\w+){0,3}\W*$", re.I)
+
+
+def check_comparisons(text: str, evidence: dict[str, Evidence], qids: set[str]) -> list[str]:
+    """'X was 4.79 miles, higher than the other three Mondays' must hold against the cited rows: the row holding 4.79
+    must be above every other row of that column (below, for 'lower than'). Comparisons with an average ('than the
+    mean of the other ...') are not matched; derived percentages are checked elsewhere."""
+    problems = []
+    for sent in _sentences(text):
+        for m in _CMP.finditer(sent):
+            head = sent[:m.start()]
+            if _CMP_NEG.search(head):
+                continue
+            nums = [float(x.replace(",", "")) for x, suf in _NUM_RE.findall(_DATE_RE.sub(" ", head)) if not suf]
+            days = month_days(head)
+            up = m.group("dir").lower() in _CMP_UP
+            for q in sorted(qids):
+                ev = evidence.get(q)
+                if not ev or ev.status != "ok" or len(ev.rows) < 2:
+                    continue
+                for ci, col in enumerate(ev.columns):
+                    vals = [_num(r[ci]) for r in ev.rows]
+                    if sum(v is not None for v in vals) < 2:
+                        continue
+                    targets = [i for i, v in enumerate(vals) if v is not None and any(value_matches(n, v) for n in nums)]
+                    if days:
+                        dated = [i for i in targets if any(month_days(str(x)[:10]) & days for x in ev.rows[i])]
+                        targets = dated
+                    if len(targets) != 1:
+                        continue
+                    t = targets[0]
+                    worse = [(ev.rows[i], v) for i, v in enumerate(vals) if i != t and v is not None and (v >= vals[t] if up else v <= vals[t])]
+                    if worse:
+                        row, v = worse[0]
+                        key = next((str(x)[:10] for x in row if isinstance(x, str)), "another row")
+                        problems.append(f"'{m.group(0)}' is contradicted by {q}.{col}: {vals[t]:g} vs {v:g} for {key}")
+    return list(dict.fromkeys(problems))
 
 
 _MON = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
@@ -399,6 +487,27 @@ def _weather_rows(evidence: dict[str, Evidence]) -> list[dict]:
     return out
 
 
+_BASELINE_WORDS = re.compile(r"\b(?:other|others|comparison|baseline|control|reference|previous|surrounding|remaining)\b", re.I)
+_CLAUSE_BREAK = re.compile(r"[,;:()]|\b(?:whereas|while|but|although|though|unlike|compared\s+(?:with|to)|versus|vs\.?)\b", re.I)
+
+
+def _days_for(sent: str, start: int, end: int):
+    """The day a weather word describes: the nearest date in its own clause, else the nearest date in the sentence.
+    None when the sentence has no date."""
+    spans = []
+    for m in _DM_RE.finditer(sent):
+        spans.append((m.start(), m.end(), month_days(m.group(0))))
+    if not spans:
+        return None
+    breaks = [0] + [b.start() for b in _CLAUSE_BREAK.finditer(sent)] + [len(sent)]
+    lo = max(b for b in breaks if b <= start)
+    hi = min((b for b in breaks if b >= end), default=len(sent))
+    same = [sp for sp in spans if sp[0] >= lo and sp[1] <= hi] or spans
+    def dist(sp):
+        return start - sp[1] if sp[1] <= start else (sp[0] - end if sp[0] >= end else 0)
+    return min(same, key=dist)[2]
+
+
 def _sentences(text: str) -> list[str]:
     return [s for s in re.split(r"(?<=[.!?;])\s+|\n+", text) if s.strip()]
 
@@ -421,7 +530,11 @@ def check_weather_wording(text: str, evidence: dict[str, Evidence], context: str
                     continue
                 adj = m.group("adj").lower()
                 what = (m.groupdict().get("what") or "").lower()
-                days = month_days(sent) or default_days
+                days = _days_for(sent, m.start(), m.end())
+                if days is None:  # no date in the sentence
+                    if _BASELINE_WORDS.search(sent):
+                        continue  # "the baseline Saturday had dry weather" is about the comparison days
+                    days = default_days
                 for r in rows:
                     hit = r["days"] & days
                     if not hit:

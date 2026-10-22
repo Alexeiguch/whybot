@@ -146,7 +146,7 @@ def test_derived_check_rejects_through_number_check():
     e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
                  rows=[["a", 77244], ["b", 130018], ["c", 141642], ["e", 153149]], row_count=4, tables=["t"])
     c = Claim(cid="C1", hypothesis_id="H0", statement="down 49.5%", direction="supports",
-              cited_values=[CitedValue(qid="Q1", column="trips", value=v) for v in VALS],
+              cited_values=[CitedValue(qid="Q1", column="trips", value=v, row_hint=f"d={k}") for v, k in zip(VALS, "abce")],
               derived=[DerivedValue(name="pct", value=-49.5, formula=BASE)])
     ch = check_claim_numbers(c, {"Q1": e})
     assert not ch.ok and "49.5" in ch.problems[0]
@@ -387,3 +387,110 @@ def test_allowlist_fails_closed_when_the_catalog_fails():
     for ds in (Broken(), Empty()):
         with pytest.raises(DataSourceError, match="catalog"):
             ds.run("SELECT * FROM NY_TAXI.trips")
+
+
+
+# ---- S3: percentages are checked against the specific evidence, in every part of the answer
+def _ev(qid, columns, rows, table="whybot.yellow_daily"):
+    return Evidence(qid=qid, hypothesis_id="H1", purpose="p", iteration=1, status="ok", columns=columns, rows=rows,
+                    row_count=len(rows), tables=[table], sql="select 1", sql_hash=sql_hash(f"select {qid}"))
+
+
+def test_a_percentage_is_not_backed_by_an_unrelated_cell():
+    from whybot.checks import check_text_numbers
+    dist = _ev("Q6", ["trip_date", "avg_trip_distance"], [["2025-01-20", 4.79], ["2025-01-13", 5.53]])
+    zones = _ev("Q7", ["LocationID", "Zone"], [["12", "Battery Park"]], "NY_TAXI.taxi_zones")
+    ev = {"Q6": dist, "Q7": zones}
+    text = "Average trip distance rose to 4.79 miles (up ~12%)."
+    assert check_text_numbers(text, ev, {"Q6"}, [36.5]) == ["the number '12%' in the answer is not backed by cited evidence"]
+    assert check_text_numbers(text, ev, {"Q6"}, [36.5], strict_rates=False) == []   # checks v1: any cell, the reviewed gap
+    assert check_text_numbers(text, ev, {"Q6"}, [12.1]) == []                       # a verified derived value
+
+
+def test_a_percentage_may_come_from_a_rate_column_of_a_citable_query_only():
+    from whybot.checks import check_text_numbers
+    rates = _ev("Q2", ["trip_date", "pct_change_vs_baseline"], [["2024-11-28", -45.5]])
+    assert check_text_numbers("Trips fell 45.5%.", {"Q2": rates}, {"Q2"}) == []
+    assert check_text_numbers("Trips fell 45.5%.", {"Q2": rates}, set())          # not a query the answer may cite
+
+
+def test_recommendation_and_caveats_are_number_checked_but_tolerances_and_day_lists_are_not():
+    e = _ev("Q1", ["trip_date", "trips"], [["2024-12-21", 131279], ["2024-12-14", 140000]])
+    cit = Citation(qid="Q1", sql_hash=e.sql_hash, table="whybot.yellow_daily")
+    ans = FinalAnswer(headline="Trips were flat on 21 Dec 2024", answer="Trips were 131,279 on 2024-12-21.", confidence=0.6,
+                      recommendation="Expect a 30% drop next time.", claims=[FinalClaim(text="131,279 trips on 2024-12-21", citations=[cit])],
+                      caveats=["The other December Saturdays (7, 14, 28) had no snow.", "The ±5% threshold is analyst-defined.",
+                               "Volume could be 25% lower on weekdays."])
+    probs = validate_final(ans, {"Q1": e}, {"Q1"}, context="Saturday 21 Dec 2024, 7 Dec, 14 Dec, 28 Dec")
+    nums = [p for p in probs if "not backed" in p]
+    assert nums == ["the number '30%' in the answer is not backed by cited evidence",
+                    "the number '25%' in the answer is not backed by cited evidence"]
+
+
+# ---- S4: a bad row_hint never widens the match to every row
+@pytest.mark.parametrize("hint", ["2024-02-13", "day=2024-02-13", "trip_date:2024-02-13"])
+def test_invalid_row_hint_fails_instead_of_matching_any_row(hint):
+    ch = check_claim_numbers(claim(102152, hint=hint), {"Q1": ev()})
+    assert not ch.ok and "must be <column>=<value>" in ch.problems[0]
+
+
+def test_empty_row_hint_only_for_single_row_or_constant_column():
+    assert not check_claim_numbers(claim(102152, hint=""), {"Q1": ev()}).ok
+    one = ev()
+    one.rows = one.rows[:1]
+    assert check_claim_numbers(claim(102152, hint=""), {"Q1": one}).ok
+
+
+# ---- S7: the weather word is bound to its own date; dateless baseline sentences are skipped
+def _wx():
+    return _ev("Q2", ["obs_date", "prcp_mm", "snow_mm"], [["2024-12-21", 12.0, 46.0], ["2024-12-14", 0.0, 0.0]],
+               "whybot.nyc_weather_daily")
+
+
+@pytest.mark.parametrize("text", ["Snow fell on 21 Dec 2024, whereas 14 Dec 2024 had dry weather.",
+                                  "The baseline Saturday had dry weather."])
+def test_weather_wording_false_positives_from_the_review_pass(text):
+    assert check_weather_wording(text, {"Q2": _wx()}, "Did the snowfall on Saturday 21 Dec 2024 reduce trips?") == []
+
+
+@pytest.mark.parametrize("text", ["21 Dec 2024 had dry weather, unlike 14 Dec 2024.",
+                                  "14 Dec 2024 was wet, whereas 21 Dec 2024 had mild weather.",
+                                  "It was a mild day."])
+def test_weather_wording_still_catches_the_target_day(text):
+    assert check_weather_wording(text, {"Q2": _wx()}, "Did the snowfall on Saturday 21 Dec 2024 reduce trips?")
+
+
+# ---- comparison check: "higher than the other three Mondays" must hold against the cited rows (run #3 claim 4)
+def _dist():
+    return _ev("Q6", ["trip_date", "avg_trip_distance"],
+               [["2025-01-06", 4.40], ["2025-01-13", 5.53], ["2025-01-20", 4.79], ["2025-01-27", 4.52]])
+
+
+def test_comparison_contradicted_by_the_cited_rows_is_rejected():
+    from whybot.checks import check_comparisons
+    text = "Average trip distance on 2025-01-20 was 4.79 miles, which is higher than the other three Mondays in January 2025"
+    probs = check_comparisons(text, {"Q6": _dist()}, {"Q6"})
+    assert probs and "5.53" in probs[0] and "2025-01-13" in probs[0]
+    c = Claim(cid="c4", hypothesis_id="H2", statement=text, direction="supports",
+              cited_values=[CitedValue(qid="Q6", column="avg_trip_distance", value=4.79, row_hint="trip_date=2025-01-20")])
+    assert not check_claim_numbers(c, {"Q6": _dist()}).ok
+    assert check_claim_numbers(c.model_copy(deep=True), {"Q6": _dist()}, version=1).ok   # recorded runs keep v1 behaviour
+
+
+@pytest.mark.parametrize("text", ["Distance on 13 Jan was 5.53 miles, higher than the other Mondays.",
+                                  "Distance on 6 Jan was 4.40 miles, lower than all the other Mondays.",
+                                  "Distance on 20 Jan was 4.79 miles, higher than the mean of the other Mondays.",
+                                  "Distance on 20 Jan (4.79 miles) was not higher than the other Mondays."])
+def test_true_average_or_negated_comparisons_pass(text):
+    from whybot.checks import check_comparisons
+    assert check_comparisons(text, {"Q6": _dist()}, {"Q6"}) == []
+
+
+def test_writer_validator_rejects_a_false_comparison_in_a_final_claim():
+    e = _dist()
+    cit = Citation(qid="Q6", sql_hash=e.sql_hash, table="whybot.yellow_daily")
+    ans = FinalAnswer(headline="Distance on 20 Jan 2025", answer="Distance was 4.79 miles on 2025-01-20.", recommendation="r",
+                      confidence=0.5, claims=[FinalClaim(text="Average trip distance on 2025-01-20 was 4.79 miles, which is higher "
+                                                              "than the other three Mondays", citations=[cit])])
+    assert any("claim 1: 'higher than the other'" in p for p in validate_final(ans, {"Q6": e}, {"Q6"}, context="20 Jan 2025"))
+    assert not any("higher than" in p for p in validate_final(ans, {"Q6": e}, {"Q6"}, context="20 Jan 2025", version=1))

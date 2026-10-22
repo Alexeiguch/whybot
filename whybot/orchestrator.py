@@ -7,6 +7,7 @@ still fails marks its hypothesis untestable for that iteration (fallback) instea
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 import uuid
@@ -14,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .agents import Analyst, Critic, Planner, SQLAgent, Writer
-from .checks import check_claim_numbers, check_consistency, decide_next, drop_uncited, result_sanity, tables_in_sql, validate_final
+from .checks import CHECKS_VERSION, check_claim_numbers, check_consistency, decide_next, drop_uncited, result_sanity, tables_in_sql, validate_final
 from .config import ROOT, Settings
 from .datasource import DataSource, DataSourceError, guard_sql, make_datasource, sql_hash
 from .evidence import Evidence
@@ -94,19 +95,26 @@ class WhyBot:
                     else f"{ev['model']} {ev['latency_s']}s tokens={ev.get('completion_tokens')}"
                 tr.emit(agent, "llm_call", output_summary=summ,
                         status="info", data={k: v for k, v in ev.items() if k != "event"})
+                if ev.get("replayed") and not ev.get("prompt_match"):
+                    tr.emit(agent, "replay_drift", status="warning",
+                            output_summary=f"DRIFT: the {role} prompt changed since recording (prompt_sha {ev.get('prompt_sha')} vs recorded "
+                                           f"{ev.get('recorded_prompt_sha')}); the recorded response is replayed but may not match today's code",
+                            data={"role": role, "prompt_sha": ev.get("prompt_sha"), "recorded_prompt_sha": ev.get("recorded_prompt_sha")})
+                    if os.environ.get("REPLAY_STRICT", "").lower() in ("1", "true", "yes"):
+                        raise LLMError(f"replay drift on the {role} prompt: cassette prompt mismatch (REPLAY_STRICT is set)")
             else:
                 tr.emit(agent, ev["event"], output_summary=str(ev.get("error", ""))[:300], status="retry",
                         retry_count=ev.get("attempt", 0), data=ev)
         if self._llm is not None:
             self._llm.on_call = on_call
             return self._llm
-        import os
         from .llm import CassetteLLM, NvidiaLLM, cassette_path
         cpath = cassette_path(self.s.fixtures_dir, self._question)
         if self.s.sample_mode and os.environ.get("SAMPLE_LLM", "replay") != "live":
             llm = CassetteLLM(cpath, on_call=on_call)
             h = llm.header
             self._recorded_recall = h.get("hmem_recall")
+            self._checks_version = int(h.get("checks_version", 1))
             tr.emit("Orchestrator", "llm_mode", status="info",
                     output_summary=f"SAMPLE_MODE REPLAY of live run {h.get('live_run_id')} recorded {h.get('recorded_at')} "
                                    f"(trace {h.get('trace')}); LLM and SQL outputs come from that run, the checks and branch policy re-execute",
@@ -154,6 +162,7 @@ class WhyBot:
         validate_run_id(run_id, allow_recorded=recording)
         self._question, self._cassette, self._run_id = question, None, run_id
         self._recorded_recall = None
+        self._checks_version, self._shadow = CHECKS_VERSION, []
         result = None
         t0 = time.time()
         deadline = t0 + self.s.run_timeout_s
@@ -189,6 +198,12 @@ class WhyBot:
         result["wall_clock"] = {"started_at": datetime.fromtimestamp(t0, timezone.utc).isoformat(timespec="seconds"),
                                 "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                                 "seconds": result["execution_time_seconds"]}
+        if self._shadow:
+            tr.emit("Orchestrator", "shadow_checks", status="warning",
+                    output_summary=f"checks v{CHECKS_VERSION} would also flag (this replay ran the checks at v{self._checks_version}, "
+                                   f"as recorded): " + "; ".join(self._shadow)[:600],
+                    data={"recorded_checks_version": self._checks_version, "current_checks_version": CHECKS_VERSION,
+                          "findings": self._shadow})
         tr.emit("Orchestrator", "finish", output_summary=f"status={result['status']} wall_clock={result['execution_time_seconds']}s",
                 status="success" if result["status"] != "error" else "error", data={"wall_clock": result["wall_clock"]})
         (Path(self.s.logs_dir) / f"{run_id}.result.json").write_text(json.dumps(result, indent=1, default=str))
@@ -298,7 +313,11 @@ class WhyBot:
             prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic
-            checks = {c.cid: check_claim_numbers(c, evidence, question) for c in claims.claims}
+            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version) for c in claims.claims}
+            if self._checks_version < CHECKS_VERSION:
+                for c in claims.claims:
+                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question).problems if p not in checks[c.cid].problems]
+                    self._note_shadow(f"iteration {it} {c.cid}", extra)
             for cid, ch in checks.items():
                 tr.emit("Critic", "number_check", output_summary=f"{cid}: {'PASS' if ch.ok else 'REJECT ' + '; '.join(ch.problems)}"[:400],
                         status="success" if ch.ok else "rejected", data={"cid": cid, "ok": ch.ok, "problems": ch.problems, "corrections": ch.corrections})
@@ -555,6 +574,12 @@ class WhyBot:
             hypothesis_status=[], decision="retry" if retry else "insufficient_evidence",
             feedback="Critic unavailable this iteration; only number checks were applied." + (" Retrying." if retry else ""))
 
+    def _note_shadow(self, where: str, problems) -> None:
+        for p in problems:
+            item = f"{where}: {p}"
+            if item not in self._shadow:
+                self._shadow.append(item)
+
     @staticmethod
     def _dq_caveat(ans: FinalAnswer, dq_notes) -> FinalAnswer:
         """The calendar data-quality finding is rendered deterministically from the DQ1 rows, never paraphrased."""
@@ -588,8 +613,11 @@ class WhyBot:
                     verified_derived.append(d.value)
 
         def validator(ans: FinalAnswer) -> list[str]:
-            probs = validate_final(ans, evidence, allowed, verified_derived, context=question + "\n" + "\n".join(dq_notes),
-                                   dq_notes=dq_notes)
+            ctx = question + "\n" + "\n".join(dq_notes)
+            probs = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, version=self._checks_version)
+            if self._checks_version < CHECKS_VERSION:
+                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes)
+                self._note_shadow("Writer draft", [p for p in now if p not in probs])
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []
             return probs

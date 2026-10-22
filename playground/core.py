@@ -240,7 +240,7 @@ def stream_live(question: str, run_id: str, api_key: str):
 # ---------------------------------------------------------------- state + rendering
 
 STATUS_CLASS = {"rejected": "bad", "error": "bad", "retry": "retry", "escalated": "warn", "fallback": "warn",
-                "success": "ok", "info": "muted"}
+                "success": "ok", "info": "muted", "warning": "warn"}
 
 
 @dataclass
@@ -276,6 +276,16 @@ class RunView:
             cls = "live" if "LIVE Zetaris" in ds_label else "mixed"
         data_line = f"<div class='ds'>Data source: <b>{_e(ds_label or 'starting…')}</b></div>" if ds_label or self.events else ""
         fb_line = "".join(f"<div class='ds warnline'>⚠ {_e(e.get('output_summary', ''))}</div>" for e in fb)
+        drift = [e for e in self.events if e.get("action") == "replay_drift"]
+        if drift:
+            roles = ", ".join(dict.fromkeys(str((e.get("data") or {}).get("role", e.get("agent_name", "?"))) for e in drift))
+            fb_line += (f"<div class='ds warnline drift'><span class='pill bad'>DRIFT: prompt changed since recording</span> "
+                        f"{len(drift)} replayed call(s) ({_e(roles)}) no longer match the live prompt</div>")
+        shadow = next((e for e in self.events if e.get("action") == "shadow_checks"), None)
+        if shadow:
+            n = len((shadow.get("data") or {}).get("findings", []))
+            fb_line += (f"<div class='ds warnline'>⚠ Newer checks would flag {n} item(s) in this recorded run "
+                        f"(see the shadow_checks event in the timeline)</div>")
         return f"<div class='pg-banner {cls}'><div class='head'>{head}</div><div class='sub'>{sub}</div>{data_line}{fb_line}</div>"
 
     # ---- panels
@@ -295,6 +305,10 @@ class RunView:
                 cls = {"ok": "", "warn": "warn", "bad": "bad"}[pcls]
             if act == "branch" and st == "retry":
                 tag = "↻ RETRY → Planner"
+            if act == "replay_drift":
+                tag, pcls, cls = "DRIFT", "bad", "warn"
+            if act == "shadow_checks":
+                tag, pcls, cls = "⚠ NEWER CHECKS", "warn", "warn"
             pill = f"<span class='pill {pcls}'>{_e(tag)}</span>" if tag else ""
             tgt = f" → {_e(e['target_agent'])}" if e.get("target_agent") else ""
             rows.append(f"<tr class='{cls}'><td class='t'><b>#{_e(e.get('seq', ''))}</b><br>{e.get('elapsed_s', '')}s<br>it{e.get('iteration', 0)}</td>"
