@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from .config import ROOT, Settings
 from .orchestrator import WhyBot, new_run_id
+from .runid import RunIdError, trace_exists, validate_run_id
 
 app = FastAPI(title="WhyBot", version="0.1.0", description="Explains why a metric changed, with cited evidence.")
 STATIC = Path(__file__).parent / "static"
@@ -60,9 +61,22 @@ def samples():
     return out
 
 
+def _check_run_id(run_id: str | None, settings: Settings) -> None:
+    """400 for a malformed or reserved (recorded-*) id, 409 if a trace with that id already exists."""
+    if run_id is None:
+        return
+    try:
+        validate_run_id(run_id)
+    except RunIdError as e:
+        raise HTTPException(400, str(e))
+    if trace_exists(run_id, settings.logs_dir):
+        raise HTTPException(409, "a trace with this run_id already exists; traces are never overwritten")
+
+
 @app.post("/run")
 def run_sync(req: RunRequest):
     """Blocking run: takes the hackathon JSON shape and returns the full structured result."""
+    _check_run_id(req.run_id, _settings(req.options))
     if not RUN_SLOTS.acquire(timeout=5):
         raise HTTPException(429, "too many investigations running; retry shortly")
     try:
@@ -73,6 +87,7 @@ def run_sync(req: RunRequest):
 
 @app.post("/runs")
 def run_async(req: RunRequest):
+    _check_run_id(req.run_id, _settings(req.options))
     run_id = req.run_id or new_run_id()
     if run_id in RUNS and not RUNS[run_id]["done"]:
         raise HTTPException(409, "a run with this id is in progress")

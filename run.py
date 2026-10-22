@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import datetime, timezone
 import os
 import sys
 
@@ -42,13 +43,20 @@ def main() -> int:
     if a.example:
         ex = json.load(open(a.example))
         question = ex["input"]["query"]
-        run_id = run_id or ex.get("run_id")
+        if not run_id and ex.get("run_id"):  # a fresh id per run, so re-running an example never hits an existing trace
+            run_id = f"{ex['run_id']}-{datetime.now(timezone.utc):%Y%m%dT%H%M%SZ}"
         if ex.get("options", {}).get("sample_mode"):
             os.environ["SAMPLE_MODE"] = "true"
     s = Settings.from_env()
     if s.data_source == "dev":
         print("[WARN] DATA_SOURCE=dev: DEV-ONLY DuckDB sample, NOT Zetaris. Do not use for the demo.", file=sys.stderr)
-    res = WhyBot(s).run(question, run_id=run_id)
+    from whybot.runid import RunIdError
+
+    try:
+        res = WhyBot(s).run(question, run_id=run_id)
+    except RunIdError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
     if a.markdown and res.get("output"):
         print(res["output"]["markdown"])
     else:

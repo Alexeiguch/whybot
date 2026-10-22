@@ -19,6 +19,7 @@ from .config import ROOT, Settings
 from .datasource import DataSource, DataSourceError, guard_sql, make_datasource, sql_hash
 from .evidence import Evidence
 from .llm import BaseLLM, LLMError
+from .runid import RUN_ID_RE, validate_run_id  # noqa: F401  (RUN_ID_RE re-exported)
 from .schemas import ClaimSet, CriticReport, FinalAnswer, Hypothesis, HypothesisStatus, QuerySpec
 from .trace import Tracer
 
@@ -56,7 +57,6 @@ def parse_dates(text: str) -> list:
 
 
 WRITER_RESERVE_S = 150  # stop iterating early enough for the Writer to finish inside the run budget
-RUN_ID_RE = __import__("re").compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
 
 
 def result_ok(r) -> bool:
@@ -150,14 +150,14 @@ class WhyBot:
     # ------------------------------------------------------------------ main entry
     def run(self, question: str, run_id: str | None = None, subscribe=None) -> dict:
         run_id = run_id or new_run_id()
-        if not RUN_ID_RE.match(run_id):
-            raise ValueError("invalid run_id: use letters, digits, '.', '_' or '-' (max 80 chars)")
+        recording = bool(self.s.record_fixtures and self.s.data_source == "zetaris")
+        validate_run_id(run_id, allow_recorded=recording)
         self._question, self._cassette, self._run_id = question, None, run_id
         self._recorded_recall = None
         result = None
         t0 = time.time()
         deadline = t0 + self.s.run_timeout_s
-        tr = Tracer(run_id, self.s.logs_dir, echo=self.echo)
+        tr = Tracer(run_id, self.s.logs_dir, echo=self.echo, recording=recording)
         if subscribe:
             tr.subscribe(subscribe)
         mem = ds = None

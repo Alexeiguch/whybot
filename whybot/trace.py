@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from .config import redact
+from .runid import RunIdError, trace_exists, validate_run_id
 
 
 def _scrub(obj: Any) -> Any:
@@ -23,11 +24,15 @@ def _scrub(obj: Any) -> Any:
 
 
 class Tracer:
-    def __init__(self, run_id: str, logs_dir: Path, echo: bool = True):
+    def __init__(self, run_id: str, logs_dir: Path, echo: bool = True, *, recording: bool = False):
+        """recording=True only for scripts/record_fixtures.py: it may use the reserved recorded-* prefix and replace that trace."""
+        validate_run_id(run_id, allow_recorded=recording)
+        if trace_exists(run_id, logs_dir) and not (recording and run_id.startswith("recorded-")):
+            raise RunIdError(f"a trace for run_id '{run_id}' already exists; traces are never overwritten, pick a new run_id")
         self.run_id = run_id
         self.path = Path(logs_dir) / f"{run_id}.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text("")  # fresh trace per run: a reused run_id never appends to an old trace
+        self.path.write_text("")
         self.echo = echo
         self.seq = 0
         self.iteration = 0

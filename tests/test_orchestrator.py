@@ -1,3 +1,4 @@
+from pathlib import Path
 """Branching behaviour of the full loop with a scripted fake LLM and a fake data source (no network, no Meterless)."""
 import json
 
@@ -167,14 +168,43 @@ def test_invalid_run_id_is_rejected(settings):
         WhyBot(settings, llm=FakeLLM({}), datasource=FakeSource([]), use_meterless=False, echo=False).run("q", run_id="../escape")
 
 
-def test_reused_run_id_gets_a_fresh_trace(settings):
+def test_reused_run_id_never_overwrites_an_existing_trace(settings):
+    import pytest
+    from whybot.runid import RunIdError
+
     def bot():
         llm = FakeLLM({"planner": [PLAN], "sql": [SQL_TRIPS, SQL_SNOW_OK], "analyst": [CLAIMS], "critic": [critic("accept")],
                        "writer": [writer_for([("Q1", sql_hash(SQL_TRIPS["sql"] + " LIMIT 500"), "NY_TAXI.yellow_tripdata")])]})
         return WhyBot(settings, llm=llm, datasource=FakeSource(routes()), use_meterless=False, echo=False)
-    bot().run("why?", run_id="same")
     res = bot().run("why?", run_id="same")
+    before = (Path(settings.logs_dir) / "same.jsonl").read_bytes()
+    with pytest.raises(RunIdError, match="already exists"):
+        bot().run("why?", run_id="same")
+    assert (Path(settings.logs_dir) / "same.jsonl").read_bytes() == before
     assert sum(1 for e in events(res, settings) if e["action"] == "start") == 1
+
+
+def test_reserved_and_malformed_run_ids_are_refused(settings):
+    import pytest
+    from whybot.runid import RunIdError
+
+    for bad in ("recorded-example-1-thanksgiving", "Recorded-x", "../x", "a/b", "x..y", ".hidden", "a" * 90):
+        with pytest.raises(RunIdError):
+            WhyBot(settings, llm=FakeLLM({}), datasource=FakeSource(routes()), use_meterless=False, echo=False).run("why?", run_id=bad)
+    assert not list(Path(settings.logs_dir).glob("recorded-*"))
+
+
+def test_only_a_live_recording_may_replace_a_recorded_trace(tmp_path):
+    import pytest
+    from whybot.runid import RunIdError
+    from whybot.trace import Tracer
+
+    (tmp_path / "recorded-x.jsonl").write_text("live trace\n")
+    with pytest.raises(RunIdError):
+        Tracer("recorded-x", tmp_path, echo=False)
+    assert (tmp_path / "recorded-x.jsonl").read_text() == "live trace\n"
+    Tracer("recorded-x", tmp_path, echo=False, recording=True)  # scripts/record_fixtures.py re-recording
+    assert (tmp_path / "recorded-x.jsonl").read_text() == ""
 
 
 def test_failed_follow_up_plan_finishes_with_verified_claims(settings):

@@ -38,3 +38,16 @@ def test_run_input_validation_and_no_source_override(monkeypatch):
     assert c.post("/run", json={"run_id": "../../etc", "input": {"query": "why did trips drop?"}}).status_code == 422
     r = c.post("/run", json={"input": {"query": "why did trips drop?"}, "options": {"data_source": "dev"}}).json()
     assert r["source"] == "zetaris"
+
+
+def test_recorded_prefix_and_existing_traces_are_refused(monkeypatch, tmp_path):
+    monkeypatch.setattr(srv, "WhyBot", StubBot)
+    monkeypatch.setenv("LOGS_DIR", str(tmp_path))
+    (tmp_path / "taken.jsonl").write_text("{}\n")
+    c = TestClient(srv.app)
+    body = {"input": {"query": "why did trips drop?"}, "options": {"sample_mode": True}}
+    for path in ("/run", "/runs"):
+        assert c.post(path, json={**body, "run_id": "recorded-example-1-thanksgiving"}).status_code == 400
+        assert c.post(path, json={**body, "run_id": "taken"}).status_code == 409
+        assert c.post(path, json={**body, "run_id": "x..y"}).status_code == 400
+    assert (tmp_path / "taken.jsonl").read_text() == "{}\n"

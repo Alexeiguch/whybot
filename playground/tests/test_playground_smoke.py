@@ -194,3 +194,13 @@ def test_clicking_a_claim_reveals_its_cited_sql():
     assert "<details class='claim'>" in md and "<summary>" in md
     assert "SELECT trips FROM whybot.yellow_daily WHERE x &lt; 3" in md
     assert "Trips fell &lt;45%&gt;" in md
+
+
+def test_playground_refuses_reserved_or_malformed_run_ids():
+    from whybot.runid import RunIdError
+    for bad in ("recorded-example-1-thanksgiving", "../x"):
+        with pytest.raises(RunIdError):
+            next(core.stream_replay(EX1, bad))
+        with pytest.raises(RunIdError):
+            next(core.stream_live(EX1, bad, "dummy"))
+    assert core.new_run_id("replay").startswith("pg-replay-")

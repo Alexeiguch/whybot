@@ -26,6 +26,7 @@ import httpx
 
 from whybot.config import ROOT, Settings
 from whybot.llm import cassette_path
+from whybot.runid import validate_run_id
 
 API_HOST = os.environ.get("WHYBOT_API_HOST", "127.0.0.1")
 API_PORT = int(os.environ.get("WHYBOT_API_PORT", "8000"))
@@ -153,6 +154,7 @@ def new_run_id(mode: str) -> str:
 
 def stream_replay(question: str, run_id: str):
     """SAMPLE_MODE through the public API: POST /runs, then follow the SSE timeline until the result event."""
+    validate_run_id(run_id)
     url = ensure_api()
     body = {"run_id": run_id, "input": {"query": question}, "options": {"sample_mode": True}}
     r = httpx.post(f"{url}/runs", json=body, timeout=30)
@@ -160,6 +162,8 @@ def stream_replay(question: str, run_id: str):
         raise RuntimeError("Too many investigations are running on this playground; try again in a minute.")
     if r.status_code == 422:
         raise RuntimeError("The question must be 5 to 500 characters.")
+    if r.status_code in (400, 409):
+        raise RuntimeError(f"Run id refused: {r.json().get('detail', '')}")
     r.raise_for_status()
     events_path = r.json()["events"]
     with httpx.stream("GET", f"{url}{events_path}", timeout=httpx.Timeout(30, read=1200)) as resp:
@@ -185,13 +189,14 @@ def stream_live(question: str, run_id: str, api_key: str):
     from whybot.orchestrator import WhyBot
     from .live_llm import KeyedNvidiaLLM
 
+    validate_run_id(run_id)
     key = (api_key or "").strip()
     if not key:
         raise RuntimeError("Paste your NVIDIA API key (build.nvidia.com) to run Live, or switch to Replay.")
     if not LIVE_SLOTS.acquire(timeout=5):
         raise RuntimeError("Too many live investigations are running on this playground; try again shortly.")
     s = Settings.from_env()
-    s.sample_mode = False
+    s.sample_mode, s.record_fixtures = False, False  # a playground run never records or touches recorded-* traces
     zet_ok, reason = zetaris_configured()
     s.data_source = "zetaris" if zet_ok else "replay"
     if not zet_ok and not (Path(s.fixtures_dir) / "catalog.json").is_file():
