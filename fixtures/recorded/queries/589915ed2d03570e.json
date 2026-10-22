@@ -1,0 +1,46 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT obs_date, prcp_mm, snow_mm, tmax_c, tmin_c FROM whybot.nyc_weather_daily WHERE obs_date IN (DATE '2024-11-28', DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') ORDER BY obs_date LIMIT 500",
+ "sql_hash": "sha256:589915ed2d03570e",
+ "recorded_at": "2026-10-22T13:02:36+00:00",
+ "columns": [
+  "obs_date",
+  "prcp_mm",
+  "snow_mm",
+  "tmax_c",
+  "tmin_c"
+ ],
+ "rows": [
+  [
+   "2024-11-07",
+   0.0,
+   0,
+   22.8,
+   12.2
+  ],
+  [
+   "2024-11-14",
+   0.0,
+   0,
+   8.3,
+   2.8
+  ],
+  [
+   "2024-11-21",
+   39.9,
+   0,
+   12.2,
+   2.8
+  ],
+  [
+   "2024-11-28",
+   21.8,
+   0,
+   9.4,
+   5.6
+  ]
+ ],
+ "elapsed_s": 0.678,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

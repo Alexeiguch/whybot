@@ -1,0 +1,47 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, avg_total_amount, avg_trip_distance, CASE WHEN trip_date = DATE '2024-11-28' THEN 'target' ELSE 'baseline' END AS period_type FROM whybot.yellow_daily WHERE dayofweek(trip_date) = 5 AND trip_date BETWEEN DATE '2024-11-07' AND DATE '2024-12-05' ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:4a23500840b4bbb0",
+ "recorded_at": "2026-10-22T13:02:46+00:00",
+ "columns": [
+  "trip_date",
+  "avg_total_amount",
+  "avg_trip_distance",
+  "period_type"
+ ],
+ "rows": [
+  [
+   "2024-11-07",
+   28.344273792857695,
+   3.249533679952007,
+   "baseline"
+  ],
+  [
+   "2024-11-14",
+   28.70524837265613,
+   5.088759831123541,
+   "baseline"
+  ],
+  [
+   "2024-11-21",
+   28.761140849758707,
+   4.552283854285692,
+   "baseline"
+  ],
+  [
+   "2024-11-28",
+   25.322095955671823,
+   9.471360752938693,
+   "target"
+  ],
+  [
+   "2024-12-05",
+   29.70562128901142,
+   4.605283096436819,
+   "baseline"
+  ]
+ ],
+ "elapsed_s": 8.04,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 5
+}

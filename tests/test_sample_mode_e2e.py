@@ -32,7 +32,7 @@ def test_sample_mode_replay_matches_live_run_with_real_writer_answer(path, tmp_p
     assert res["status"] == live["status"] and res["status"] in ("answered", "insufficient_evidence")
     assert res["output"]["headline"] == live["output"]["headline"]
     assert res["output"]["answer"] == live["output"]["answer"]
-    assert res["data_source"]["kind"] == "replay"
+    assert res["data_source"]["kind"] == "recorded"
     assert all("RECORDED zetaris" in (e.get("source_label") or "") for e in res["evidence"] if e["status"] == "ok")
     hashes = {e["sql_hash"] for e in res["evidence"]}
     assert all(c["sql_hash"] in hashes for cl in res["output"]["claims"] for c in cl["citations"])

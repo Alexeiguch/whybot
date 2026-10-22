@@ -1,0 +1,226 @@
+{
+ "source": "zetaris",
+ "recorded_at": "2026-10-22T13:04:01+00:00",
+ "dialect": "Zetaris Lightning SQL (Spark SQL dialect)",
+ "dialect_notes": "Spark SQL functions: to_date(ts), date_format(d,'EEEE') for weekday name, dayofweek(d) returns 1=Sunday..7=Saturday, to_date(CAST(x AS STRING),'yyyyMMdd') for yyyymmdd integers, date_add/datediff, CASE WHEN. Reference tables by their full two-part name exactly as listed under TABLES (e.g. whybot.yellow_daily). No semicolons. Prefer aggregated outputs (<200 rows). ZETARIS QUIRKS (verified): (1) never read the same whybot.* view twice in one query (no self-joins, no two CTEs over the same view): it fails with MISSING_ATTRIBUTES; compare target vs baseline with conditional aggregation instead, e.g. MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN trips END) AS target_trips, AVG(CASE WHEN trip_date <> DATE '2024-11-28' THEN trips END) AS baseline_avg_trips, or simply return one row per date. Joining two DIFFERENT views on the date key is fine. (2) Compare dates with DATE 'yyyy-mm-dd' literals, never integers. date_add(d, n) takes 2 arguments. (3) An error like \"mismatched input ... expecting {'ADD', 'ANALYZE', ...}\" or \"expecting 'METADATA'\" means the statement failed to parse or resolve: simplify it, use only listed column names, and avoid short table aliases at the start of the select list.",
+ "catalog": [
+  {
+   "table": "whybot.yellow_daily",
+   "columns": [
+    [
+     "trip_date",
+     ""
+    ],
+    [
+     "trips",
+     ""
+    ],
+    [
+     "avg_total_amount",
+     ""
+    ],
+    [
+     "avg_trip_distance",
+     ""
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "table": "whybot.nyc_weather_daily",
+   "columns": [
+    [
+     "obs_date",
+     ""
+    ],
+    [
+     "prcp_mm",
+     ""
+    ],
+    [
+     "snow_mm",
+     ""
+    ],
+    [
+     "tmax_c",
+     ""
+    ],
+    [
+     "tmin_c",
+     ""
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "table": "whybot.us_holidays",
+   "columns": [
+    [
+     "holiday_date",
+     ""
+    ],
+    [
+     "holiday_name",
+     ""
+    ],
+    [
+     "is_national",
+     ""
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "table": "TPCDS_DB.date_dim",
+   "columns": [
+    [
+     "d_date_sk",
+     "integer"
+    ],
+    [
+     "d_date_id",
+     "string"
+    ],
+    [
+     "d_date",
+     "string"
+    ],
+    [
+     "d_month_seq",
+     "integer"
+    ],
+    [
+     "d_week_seq",
+     "integer"
+    ],
+    [
+     "d_quarter_seq",
+     "integer"
+    ],
+    [
+     "d_year",
+     "integer"
+    ],
+    [
+     "d_dow",
+     "integer"
+    ],
+    [
+     "d_moy",
+     "integer"
+    ],
+    [
+     "d_dom",
+     "integer"
+    ],
+    [
+     "d_qoy",
+     "integer"
+    ],
+    [
+     "d_fy_year",
+     "integer"
+    ],
+    [
+     "d_fy_quarter_seq",
+     "integer"
+    ],
+    [
+     "d_fy_week_seq",
+     "integer"
+    ],
+    [
+     "d_day_name",
+     "string"
+    ],
+    [
+     "d_quarter_name",
+     "string"
+    ],
+    [
+     "d_holiday",
+     "string"
+    ],
+    [
+     "d_weekend",
+     "string"
+    ],
+    [
+     "d_following_holiday",
+     "string"
+    ],
+    [
+     "d_first_dom",
+     "integer"
+    ],
+    [
+     "d_last_dom",
+     "integer"
+    ],
+    [
+     "d_same_day_ly",
+     "integer"
+    ],
+    [
+     "d_same_day_lq",
+     "integer"
+    ],
+    [
+     "d_current_day",
+     "string"
+    ],
+    [
+     "d_current_week",
+     "string"
+    ],
+    [
+     "d_current_month",
+     "string"
+    ],
+    [
+     "d_current_quarter",
+     "string"
+    ],
+    [
+     "d_current_year",
+     "string"
+    ]
+   ],
+   "note": ""
+  },
+  {
+   "table": "NY_TAXI.taxi_zones",
+   "columns": [
+    [
+     "OBJECTID",
+     "string"
+    ],
+    [
+     "Shape_Leng",
+     "string"
+    ],
+    [
+     "the_geom",
+     "string"
+    ],
+    [
+     "Shape_Area",
+     "string"
+    ],
+    [
+     "zone",
+     "string"
+    ],
+    [
+     "LocationID",
+     "string"
+    ],
+    [
+     "borough",
+     "string"
+    ]
+   ],
+   "note": ""
+  }
+ ]
+}
