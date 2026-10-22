@@ -190,3 +190,11 @@ def test_guard_sql_blocks_functions_tables_and_keeps_literals():
     assert "'a -- not a comment;'" in ok and "real comment" not in ok and ok.endswith("LIMIT 500")
     assert sql_hash("select 'Thanksgiving'") != sql_hash("select 'thanksgiving'")
     assert sql_hash("SELECT 'X'") == sql_hash("select 'X'")
+
+
+def test_small_llm_arithmetic_slips_are_recomputed_not_trusted():
+    from whybot.checks import check_derived_values
+    c = _claim_txt("Trips fell 45.9% vs the baseline average", VALS, [("pct", -45.9, BASE)])
+    fixes = []
+    assert check_derived_values(c, fixes) == []
+    assert fixes and "45.5" in c.statement and "45.9" not in c.statement

@@ -289,7 +289,10 @@ class WhyBot:
             checks = {c.cid: check_claim_numbers(c, evidence) for c in claims.claims}
             for cid, ch in checks.items():
                 tr.emit("Critic", "number_check", output_summary=f"{cid}: {'PASS' if ch.ok else 'REJECT ' + '; '.join(ch.problems)}"[:400],
-                        status="success" if ch.ok else "rejected", data={"cid": cid, "ok": ch.ok, "problems": ch.problems})
+                        status="success" if ch.ok else "rejected", data={"cid": cid, "ok": ch.ok, "problems": ch.problems, "corrections": ch.corrections})
+                if ch.corrections:
+                    tr.emit("Critic", "arithmetic_corrected", output_summary=f"{cid}: " + "; ".join(ch.corrections)[:400], status="info",
+                            data={"cid": cid, "corrections": ch.corrections})
             report = None
             if claims.claims and time.time() < deadline:
                 try:

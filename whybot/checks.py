@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from .evidence import Evidence
 from .schemas import Claim, CriticReport, FinalAnswer
@@ -44,6 +44,7 @@ class NumericCheck:
     cid: str
     ok: bool
     problems: list[str]
+    corrections: list[str] = field(default_factory=list)
 
 
 def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence]) -> NumericCheck:
@@ -76,8 +77,9 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence]) -> NumericC
                     continue
         if not any(value_matches(cv.value, r[idx]) for r in rows):
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
-    problems += check_derived_values(claim)
-    return NumericCheck(claim.cid, not problems, problems)
+    corrections: list[str] = []
+    problems += check_derived_values(claim, corrections)
+    return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
 _PCT = re.compile(r"(?<![\w.])[-+]?(\d+(?:\.\d+)?)\s?%")
@@ -120,9 +122,32 @@ def _close(stated: float, actual: float) -> bool:
     return abs(abs(stated) - abs(actual)) <= 0.051 + 0.002 * abs(stated)
 
 
-def check_derived_values(claim: Claim) -> list[str]:
-    """Every derived value must re-evaluate from the cited cells, and every % or Nx ratio in the statement must be one
-    of the declared derived values (or a cited cell). Catches 'fell 49.5%' when the cells give 45.5%."""
+def _within_rounding_band(stated: float, actual: float) -> bool:
+    """LLM arithmetic slips (e.g. a mean of 144,878 for 145,713, or -46.7% for -47.0%) are corrected, not trusted;
+    anything further off (e.g. 49.5% for 45.5%) is a wrong claim and is rejected."""
+    return abs(abs(stated) - abs(actual)) <= max(0.6, 0.01 * abs(actual))
+
+
+def _fmt_variants(v: float) -> list[str]:
+    a = abs(v)
+    return list(dict.fromkeys([f"{a:,.2f}", f"{a:.2f}", f"{a:,.1f}", f"{a:.1f}", f"{a:,.0f}", f"{a:.0f}"]))
+
+
+def _rewrite_number(text: str, old: float, new: float) -> str:
+    for o in _fmt_variants(old):
+        decimals = len(o.split(".")[1]) if "." in o else 0
+        n = f"{abs(new):,.{decimals}f}" if "," in o else f"{abs(new):.{decimals}f}"
+        pat = re.compile(r"(?<![\d.,])" + re.escape(o) + r"(?![\d])")
+        if pat.search(text):
+            return pat.sub(n, text)
+    return text
+
+
+def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> list[str]:
+    """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
+    recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
+    the model's. Values further off are rejected. Every % or Nx ratio in the statement must then be one of the
+    recomputed derived values (or a cited cell). Catches 'fell 49.5%' when the cells give 45.5%."""
     nums = [_num(cv.value) for cv in claim.cited_values]
     problems, ok_values = [], [abs(n) for n in nums if n is not None]
     for d in claim.derived:
@@ -131,10 +156,17 @@ def check_derived_values(claim: Claim) -> list[str]:
         except ValueError as e:
             problems.append(f"derived {d.name}: {e}")
             continue
-        if not _close(d.value, actual):
-            problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
-        else:
+        if _close(d.value, actual):
             ok_values.append(abs(actual))
+        elif _within_rounding_band(d.value, actual):
+            fixed = round(actual, 2)
+            claim.statement = _rewrite_number(claim.statement, d.value, fixed)
+            if corrections is not None:
+                corrections.append(f"derived {d.name}: {d.value:g} -> {fixed:g} (recomputed {d.formula})")
+            d.value = fixed
+            ok_values.append(abs(actual))
+        else:
+            problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
     for p in [float(m) for m in _PCT.findall(claim.statement)]:
         if not any(_close(p, v) for v in ok_values):
             problems.append(f"{p:g}% in the statement is not recomputable from cited cells (declare it in derived with a formula)")
