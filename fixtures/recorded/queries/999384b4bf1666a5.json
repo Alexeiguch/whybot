@@ -1,0 +1,31 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, avg_total_amount FROM whybot.yellow_daily WHERE dayofweek(trip_date) = 7 AND month(trip_date) = 12 AND year(trip_date) = 2024 ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:999384b4bf1666a5",
+ "recorded_at": "2026-10-22T14:10:45+00:00",
+ "columns": [
+  "trip_date",
+  "avg_total_amount"
+ ],
+ "rows": [
+  [
+   "2024-12-07",
+   26.67075517995173
+  ],
+  [
+   "2024-12-14",
+   26.447940119382736
+  ],
+  [
+   "2024-12-21",
+   25.745553439619766
+  ],
+  [
+   "2024-12-28",
+   26.939148084748425
+  ]
+ ],
+ "elapsed_s": 8.617,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

@@ -1,0 +1,36 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, trips, date_format(trip_date,'EEEE') AS weekday_name FROM whybot.yellow_daily WHERE dayofweek(trip_date) = 7 AND trip_date >= DATE '2024-12-01' AND trip_date <= DATE '2024-12-31' ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:43aa38fafed77514",
+ "recorded_at": "2026-10-22T14:09:29+00:00",
+ "columns": [
+  "trip_date",
+  "trips",
+  "weekday_name"
+ ],
+ "rows": [
+  [
+   "2024-12-07",
+   145899,
+   "Saturday"
+  ],
+  [
+   "2024-12-14",
+   159150,
+   "Saturday"
+  ],
+  [
+   "2024-12-21",
+   131279,
+   "Saturday"
+  ],
+  [
+   "2024-12-28",
+   88213,
+   "Saturday"
+  ]
+ ],
+ "elapsed_s": 8.363,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}
