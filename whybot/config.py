@@ -43,8 +43,8 @@ class Settings:
     sql_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
     writer_model: str = "nvidia/nemotron-3.5-lightning-30b-a3b"
     llm_timeout_s: float = 90.0
-    sql_timeout_s: float = 60.0
-    run_timeout_s: float = 600.0
+    sql_timeout_s: float = 90.0
+    run_timeout_s: float = 900.0
     max_iterations: int = 3
     max_sql_repairs: int = 2
     hmem_threshold: float = 0.15
@@ -53,8 +53,11 @@ class Settings:
     record_fixtures: bool = False
     meterless_enabled: bool = True
     meterless_data_dir: Path = field(default_factory=lambda: ROOT / ".meterless")
-    zetaris_databases: list[str] = field(default_factory=lambda: ["NY_TAXI", "NOAA_GHCN_S3", "HOLIDAYS"])
-    zetaris_tables: list[str] = field(default_factory=list)
+    zetaris_databases: list[str] = field(default_factory=lambda: ["NY_TAXI", "NOAA_GHCN_S3", "HOLIDAYS_REST", "TPCDS_DB"])
+    # Evidence allowlist. Real, curated sources only: the synthetic NY_TAXI tables (trips, weather_data, surge_pricing, ...)
+    # are excluded on purpose, and raw NY_TAXI.yellow_taxi (38.7M rows, ~170 s uncached scan) is opt-in via ZETARIS_TABLES.
+    zetaris_tables: list[str] = field(default_factory=lambda: [
+        "whybot.yellow_daily", "whybot.nyc_weather_daily", "whybot.us_holidays", "TPCDS_DB.date_dim", "NY_TAXI.taxi_zones"])
 
     @classmethod
     def from_env(cls) -> "Settings":

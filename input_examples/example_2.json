@@ -1,1 +1,1 @@
-{"run_id": "example-2-presidents-day", "input": {"query": "Why were yellow taxi trips on Monday 19 Feb 2024 lower than on the other Mondays of February 2024?"}, "options": {"sample_mode": false}}
+{"run_id": "example-2-snow-saturday", "input": {"query": "Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?"}, "options": {"sample_mode": false}}

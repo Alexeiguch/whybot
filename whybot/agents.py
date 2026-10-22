@@ -74,6 +74,7 @@ class SQLAgent:
         "You are the SQL Executor agent in WhyBot. Write ONE read-only SELECT (or WITH) query for the stated purpose. "
         "Use only the given tables and columns, alias every computed column with a short snake_case name, aggregate, "
         "order the output, and keep it under 200 rows. Join only with explicit JOIN ... ON keys (never comma joins). "
+        "For existence checks (e.g. is a date a holiday) return COUNT(*) or a LEFT JOIN so the result is never empty. "
         "Never use semicolons, DDL or DML."
     )
 
@@ -143,7 +144,10 @@ class Critic:
         "say what the claim says? AUTOMATED CHECK failures mean the number is not in the data: mark those unsupported. "
         "Set each hypothesis to supported/refuted/inconclusive/untested. decision=accept only if the change is quantified (H0) "
         "and at least one cause is supported with adequate strength; decision=retry with concrete follow_up_queries (tables from the "
-        "catalog) when a specific extra test would settle it; decision=insufficient_evidence if more SQL cannot help."
+        "catalog) when a specific extra test would settle it; decision=insufficient_evidence if more SQL cannot help. "
+        "A fare or zone mix shift describes HOW a change happened, not WHY: never accept it as the root cause while an external "
+        "driver (weather, holiday) is untested or its query failed; request that test instead. When two drivers coincide "
+        "(e.g. holiday and rain on the same day), say so and weigh them against baselines that isolate each one."
     )
 
     def __init__(self, llm: BaseLLM):

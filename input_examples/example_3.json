@@ -1,1 +1,1 @@
-{"run_id": "example-3-new-year-fare", "input": {"query": "Why was the average yellow taxi fare per trip on 1 Jan 2024 higher than the January 2024 daily average?"}, "options": {"sample_mode": false}}
+{"run_id": "example-3-mlk-fare", "input": {"query": "Why did the average total amount per yellow taxi trip jump on Monday 20 Jan 2025 compared with the other Mondays in January 2025?"}, "options": {"sample_mode": false}}

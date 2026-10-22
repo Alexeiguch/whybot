@@ -18,7 +18,9 @@ data/dev/
 *.duckdb
 *.jar
 # runtime state
-.meterless/
+.meterless*/
 logs/*
 !logs/.gitkeep
 !logs/samples/
+!logs/recorded-*.jsonl
+!logs/recorded-*.result.json

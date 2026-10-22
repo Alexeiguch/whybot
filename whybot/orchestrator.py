@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .agents import Analyst, Critic, Planner, SQLAgent, Writer
@@ -29,6 +29,29 @@ AGENTS = [
     {"name": "Writer", "model_role": "writer", "role": "Writes the final answer; every claim cites query id, SQL hash and source table"},
     {"name": "Memory", "model_role": None, "role": "Meterless H-MEM recall/remember, World Model provenance, Markovian carryover"},
 ]
+
+
+_MONTHS = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+
+
+def parse_dates(text: str) -> list:
+    """Dates like 2024-11-28 or 28 Nov 2024 / 28 November 2024 found in free text."""
+    import re
+    from datetime import date
+    out = []
+    for y, m, d in re.findall(r"\b(20\d\d)-(\d\d)-(\d\d)\b", text):
+        try:
+            out.append(date(int(y), int(m), int(d)))
+        except ValueError:
+            pass
+    for d, mon, y in re.findall(r"\b(\d{1,2})\s+([A-Za-z]{3,9})\s+(20\d\d)\b", text):
+        m = _MONTHS.get(mon[:3].lower())
+        if m:
+            try:
+                out.append(date(int(y), m, int(d)))
+            except ValueError:
+                pass
+    return out
 
 
 def result_ok(r) -> bool:
@@ -140,8 +163,11 @@ class WhyBot:
         result.update({"run_id": run_id, "question": question, "trace_id": run_id,
                        "log_file": str(tr.path.relative_to(ROOT)) if tr.path.is_relative_to(ROOT) else str(tr.path),
                        "execution_time_seconds": round(time.time() - t0, 1), "agents": AGENTS})
-        tr.emit("Orchestrator", "finish", output_summary=f"status={result['status']} in {result['execution_time_seconds']}s",
-                status="success" if result["status"] != "error" else "error")
+        result["wall_clock"] = {"started_at": datetime.fromtimestamp(t0, timezone.utc).isoformat(timespec="seconds"),
+                                "finished_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                                "seconds": result["execution_time_seconds"]}
+        tr.emit("Orchestrator", "finish", output_summary=f"status={result['status']} wall_clock={result['execution_time_seconds']}s",
+                status="success" if result["status"] != "error" else "error", data={"wall_clock": result["wall_clock"]})
         (Path(self.s.logs_dir) / f"{run_id}.result.json").write_text(json.dumps(result, indent=1, default=str))
         return result
 
@@ -170,6 +196,7 @@ class WhyBot:
         decision = None
         markov_steps: list[str] = []
         qcount = 0
+        dq_notes = None
 
         for it in range(1, self.s.max_iterations + 1):
             tr.iteration = it
@@ -205,7 +232,10 @@ class WhyBot:
                         tr.emit("Memory", "world_model.assert_fact", output_summary=f"{ev.qid} -> {fact['id']} (provenance: Executor, {ev.sql_hash}, {ev.primary_table})",
                                 data={"fact_id": fact["id"], "qid": ev.qid, "sql_hash": ev.sql_hash, "table": ev.primary_table})
 
-            ok_ev = [e for e in evidence.values() if e.status == "ok"]
+            if it == 1 and dq_notes is None:
+                dq_notes = self._holiday_dq_check(question, plan, tables, ds, tr, evidence)
+
+            ok_ev = [e for e in evidence.values() if e.status == "ok" and not e.qid.startswith("DQ")]
             if not ok_ev:
                 feedback = "Every query failed. Use simpler queries and only columns from the catalog."
                 decision_txt = "retry: no evidence"
@@ -276,7 +306,7 @@ class WhyBot:
         if status == "insufficient_evidence":
             tr.emit("Orchestrator", "escalate", output_summary="insufficient evidence: answer will state what is and is not known", status="escalated")
 
-        final = self._write(question, status, decision, claims, report, evidence, writer, tr)
+        final = self._write(question, status, decision, claims, report, evidence, writer, tr, dq_notes or [])
         self._remember(mem, tr, run_id, question, status, final, evidence, report)
         if mem and markov_steps:
             rec = self._safe(tr, lambda: mem.record_run(question, markov_steps + ["[TASK_COMPLETE]"]))
@@ -294,6 +324,7 @@ class WhyBot:
             "iterations": tr.iteration,
             "data_source": {"label": ds.label, "kind": ds.kind},
             "memory": {"recalled": mem_hits, "meterless": bool(mem)},
+            "data_quality_notes": dq_notes or [],
         }
 
     # ------------------------------------------------------------------ pieces
@@ -337,6 +368,8 @@ class WhyBot:
                             data={"tables": fresh})
                 continue
             smells = result_sanity(res.columns, res.rows)
+            if smells and not res.rows and attempt >= 1:
+                smells = []  # an empty result confirmed twice is evidence of absence, not an error
             if smells and attempt < self.s.max_sql_repairs:
                 err = "RESULT SANITY CHECK FAILED: " + "; ".join(smells)
                 failed.append({"sql": draft.sql, "error": err})
@@ -358,6 +391,46 @@ class WhyBot:
         tr.emit("Executor", "fallback", output_summary=f"{qid} failed after {len(failed)} attempts; hypothesis {spec.hypothesis_id} untestable this iteration",
                 status="fallback", data={"qid": qid})
         return ev
+
+    def _holiday_dq_check(self, question, plan, tables, ds, tr, evidence) -> list[str]:
+        """Critic-owned deterministic data-quality check: TPCDS date_dim.d_holiday vs real Nager.Date holidays.
+
+        Disagreements are reported as data-quality notes (never as causal evidence)."""
+        low = {t.lower(): t for t in tables}
+        dd, hol = low.get("tpcds_db.date_dim"), low.get("whybot.us_holidays")
+        if not (dd and hol):
+            return []
+        dates = parse_dates(question + " " + plan.target_window + " " + plan.baseline_window)
+        if not dates:
+            return []
+        lo, hi = min(dates) - timedelta(days=31), max(dates) + timedelta(days=31)
+        sql = (f"SELECT d.d_date AS cal_date, d.d_holiday AS tpcds_d_holiday, h.holiday_name AS nager_holiday "
+               f"FROM {dd} d LEFT JOIN {hol} h ON h.holiday_date = d.d_date AND h.is_national = true "
+               f"WHERE d.d_date BETWEEN DATE '{lo}' AND DATE '{hi}' AND (d.d_holiday = 'Y' OR h.holiday_name IS NOT NULL) "
+               f"ORDER BY d.d_date")
+        ev = Evidence(qid="DQ1", hypothesis_id="data_quality", purpose="Critic check: TPCDS d_holiday vs Nager.Date national holidays",
+                      iteration=1, tables=[dd, hol])
+        try:
+            g = guard_sql(sql)
+            res = ds.run(g, timeout_s=self.s.sql_timeout_s)
+        except DataSourceError as e:
+            tr.emit("Critic", "data_quality_check", output_summary=f"holiday cross-check failed: {str(e)[:200]}", status="error")
+            return []
+        ev.sql, ev.sql_hash, ev.status = g, sql_hash(g), "ok"
+        ev.columns, ev.rows, ev.row_count, ev.source_label = res.columns, res.rows, len(res.rows), res.source_label
+        evidence[ev.qid] = ev
+        notes = []
+        for d, flag, name in res.rows:
+            if (str(flag).upper() == "Y") != (name is not None):
+                notes.append(f"{d}: TPCDS date_dim.d_holiday={flag} but Nager.Date says "
+                             f"{name + ' (national holiday)' if name else 'no national holiday'} [DQ1 {ev.sql_hash}]")
+        tr.emit("Critic", "data_quality_check", target_agent="Writer",
+                output_summary=(f"{len(notes)} d_holiday disagreements in {lo}..{hi} (flagged as data-quality notes, not evidence)"
+                                + (f"; e.g. {notes[0]}" if notes else "")),
+                status="rejected" if notes else "success",
+                data={"qid": "DQ1", "sql": g, "sql_hash": ev.sql_hash, "tables": ev.tables, "rows_head": res.rows[:20], "notes": notes,
+                      "columns": res.columns, "row_count": ev.row_count})
+        return notes
 
     def _recall(self, mem, question, tr) -> tuple[str, list]:
         if not mem:
@@ -410,7 +483,7 @@ class WhyBot:
                                    reason="deterministic check only") for c in claims.claims],
             hypothesis_status=[], decision="insufficient_evidence", feedback="Critic unavailable; only number checks were applied.")
 
-    def _write(self, question, status, decision, claims, report, evidence, writer, tr) -> FinalAnswer:
+    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=()) -> FinalAnswer:
         sup_ids = set(decision.supported_cids)
         verdicts = {v.cid: v for v in (report.verdicts if report else [])}
         supported = [{**c.model_dump(), "critic": verdicts[c.cid].reason} for c in claims.claims if c.cid in sup_ids]
@@ -418,8 +491,10 @@ class WhyBot:
                      "reason": verdicts[c.cid].reason if c.cid in verdicts else ""} for c in claims.claims if c.cid not in sup_ids]
         allowed = {cv.qid for c in claims.claims if c.cid in sup_ids for cv in c.cited_values}
         if not allowed:  # escalation with nothing supported: may cite any successful query as context
-            allowed = {e.qid for e in evidence.values() if e.status == "ok"}
+            allowed = {e.qid for e in evidence.values() if e.status == "ok" and not e.qid.startswith("DQ")}
         hstat = [h.model_dump() for h in (report.hypothesis_status if report else [])]
+        if dq_notes:
+            hstat.append({"data_quality_notes (mention as caveats, NOT evidence)": list(dq_notes)})
 
         def validator(ans: FinalAnswer) -> list[str]:
             probs = validate_final(ans, evidence, allowed)

@@ -1,1 +1,1 @@
-{"run_id": "example-1-snowstorm", "input": {"query": "Why did NYC yellow taxi trips drop on Tuesday 13 Feb 2024 compared with the other Tuesdays in February 2024?"}, "options": {"sample_mode": false}}
+{"run_id": "example-1-thanksgiving", "input": {"query": "Why did NYC yellow taxi trips drop on Thursday 28 Nov 2024 compared with the surrounding weeks?"}, "options": {"sample_mode": false}}

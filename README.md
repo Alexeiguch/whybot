@@ -4,7 +4,7 @@
 
 Built for the GenAI Works **Open Agent Hackathon 2026, Track 2: "The Agent That Can Explain Why"**.
 
-> **Status: work in progress (built from 22 Oct 2026).** The agent loop, critic, traces, API, UI and Meterless integration work today. The live **Zetaris** connection is implemented but still waiting on a running local Zetaris instance. Until then, development runs use a clearly labelled **DEV-ONLY** DuckDB stand-in, which is never used in the demo. See [Status and roadmap](#status-and-roadmap).
+> **Status: work in progress (built from 22 Oct 2026).** End-to-end runs work against a **live local Zetaris 2.4.3.1** instance over JDBC, with Meterless memory and NVIDIA Nemotron. Real traces are in `logs/recorded-*.jsonl`, and recorded Zetaris results for `SAMPLE_MODE` are in `fixtures/recorded/`. See [Status and roadmap](#status-and-roadmap).
 
 ---
 
@@ -12,7 +12,7 @@ Built for the GenAI Works **Open Agent Hackathon 2026, Track 2: "The Agent That 
 
 An analyst sees a metric move, for example "yellow-taxi trips fell 35% last Tuesday", and has to explain it by tomorrow's stand-up. Was it the weather, a holiday, the day of the week, a change in fare or zone mix, or broken data? Answering that today means writing a handful of SQL queries across separate sources (trips, weather, calendar), eyeballing the results, and then writing a summary that nobody can audit.
 
-WhyBot takes **one bounded question** about **NYC taxi trips + NOAA weather + US holidays**, served through Zetaris Lightning SQL. It returns:
+WhyBot takes **one bounded question** about **NYC yellow-taxi trips + NOAA weather + US holidays**, federated through Zetaris Lightning SQL (overlap window 2024-04-01 to 2025-02-05). It returns:
 
 - a short answer and a **recommendation**,
 - **claims that each cite the evidence they rest on** (query id · SQL hash · source table),
@@ -52,7 +52,7 @@ flowchart TD
 | Planner | `nvidia/nemotron-3-ultra-550b-a55b` | Turns the question into falsifiable hypotheses (metric/H0, weather, holiday, day-of-week, fare mix, zone mix, data quality) and a SQL plan. Revises the plan from critic feedback and Markovian carryover. |
 | Executor | `nvidia/nemotron-3.5-lightning-30b-a3b` | Writes Lightning SQL and runs it through the `DataSource` adapter (read-only guard, timeout). On an error **or a suspicious result** (such as a cross join that gives every row identical values) it re-introspects the schema and repairs the query, up to 2 times. If the query still fails, that hypothesis is marked untestable for the iteration. |
 | Analyst | Lightning | Drafts claims for and against each hypothesis, citing exact values `{qid, column, value, row_hint}`. |
-| Critic / Evaluator | Ultra | First, a **deterministic check** confirms every cited number appears in that query's rows. Then the LLM critic judges strength, baseline fairness and confounders, sets each hypothesis's status, and decides **accept / retry (with follow-up tests) / insufficient_evidence**. |
+| Critic / Evaluator | Ultra | First, a **deterministic check** confirms every cited number appears in that query's rows. Then the LLM critic judges strength, baseline fairness and confounders, sets each hypothesis's status, and decides **accept / retry (with follow-up tests) / insufficient_evidence**. The Critic also runs a deterministic **holiday data-quality check**: it compares `TPCDS_DB.date_dim.d_holiday` with the real Nager.Date holidays around the target date and reports any disagreement as a **data-quality note**, never as evidence. |
 | Writer | Lightning | Writes the final answer from critic-approved claims only. A validator rejects any citation whose qid, SQL hash or table doesn't match real evidence and retries with feedback. As a last resort it drops uncited claims. |
 
 **Control flow is real branching, not a pipeline.** Critic verdicts and the number checks drive `checks.decide_next()`: *write*, *retry* (back to the Planner with feedback), or *escalate* to "insufficient evidence". Iterations are capped at 3, and every LLM call, SQL query and the whole run have timeouts. Every JSON output is validated against a pydantic schema and retried with the validation error. Nemotron reasoning content is stripped and never logged.
@@ -61,7 +61,7 @@ flowchart TD
 
 | Sponsor | Where it is used |
 |---|---|
-| **Zetaris** (required) | The only production data path. `whybot/datasource/zetaris_jdbc.py` connects with JayDeBeApi + the Zetaris JDBC driver (`com.zetaris.lightning.jdbc.LightningDriver`, `jdbc:zetaris:lightning@localhost:10000`). It introspects the schema with `SHOW LIGHTNING TABLES` / `DESCRIBE DATASOURCE TABLE` and runs the agents' Lightning SQL across `NY_TAXI` (shipped with the platform), `NOAA_GHCN_S3` (public S3 CSV, see `sql/*.sql`) and `HOLIDAYS`. `SAMPLE_MODE` replays **recorded real Zetaris results** (`fixtures/recorded`), and the UI labels them **RECORDED**. |
+| **Zetaris** (required) | The only production data path. `whybot/datasource/zetaris_jdbc.py` connects with JayDeBeApi + the Zetaris JDBC driver (`com.zetaris.lightning.jdbc.LightningDriver`, `jdbc:zetaris:lightning@localhost:10000`). It introspects the schema with `DESCRIBE DATASOURCE TABLE` (falling back to `SELECT … LIMIT 1`) and runs the agents' Lightning SQL. Zetaris federates three real sources: `NY_TAXI.yellow_taxi` (S3 CSV, shipped with the platform), `NOAA_GHCN_S3` (public S3 CSV) and `HOLIDAYS_REST` (Nager.Date REST), plus the `TPCDS_DB.date_dim` calendar, all exposed through SchemaStore views in container `whybot` (see `sql/` and `docs/zetaris.md`). `SAMPLE_MODE` replays **recorded real Zetaris results** (`fixtures/recorded`), and the UI labels them **RECORDED**. |
 | **Meterless** (required) | The cognition layer, through a JSON-lines bridge (`meterless_bridge/bridge.ts`, `whybot/memory.py`) to the Meterless TypeScript reference engines, vendored under `vendor/meterless` (Apache-2.0). **H-MEM:** past investigations, lessons and SQL-repair fixes are stored after each run and recalled for the Planner and SQL agent before planning (threshold tuned to 0.15 because the reference hashed embeddings score low). **World Model:** every successful query result, and every critic-supported claim, is asserted as a fact with provenance (`by` agent, `runId`, `checksum` = SQL hash, `url` = `zetaris://<table>`). **Markovian:** each loop iteration is one chunk, and its `[STATE_CHECKPOINT]` is compressed into a bounded carryover for the next Planner call. The finished investigation is recorded as a Markovian run. |
 | **NVIDIA** | All reasoning runs on **Nemotron** through the OpenAI-compatible NVIDIA API (`https://integrate.api.nvidia.com/v1`). Ultra 550B handles planning and critique, and Lightning 30B handles SQL, analysis and writing. No local GPU is needed. |
 | **Cursor** | The whole project was developed in Cursor (with Grok Bot agents). |
@@ -79,7 +79,19 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
 cp .env.example .env                       # fill NVIDIA_API_KEY and the ZETARIS_* values; never commit .env
 ```
 
-For Zetaris you need a running instance (local Docker bundle from Zetaris Cloud, or a managed cluster) and its JDBC driver JAR. Set `ZETARIS_JDBC_JAR`, `ZETARIS_USERNAME` and `ZETARIS_PASSWORD`, then register weather and holidays with `sql/*.sql` (dry-run it first). A Java runtime must be on the box (`JAVA_HOME`).
+For Zetaris you need a running instance (local Docker bundle from Zetaris Cloud, or a managed cluster) and its JDBC driver JAR. Set `ZETARIS_JDBC_JAR`, `ZETARIS_USERNAME` and `ZETARIS_PASSWORD`, then register the sources and views with the scripts in `sql/` (see `sql/00_README.md`, dry-run first). A Java runtime must be on the box (`JAVA_HOME`).
+
+### Data the agents can see (evidence allowlist, `ZETARIS_TABLES`)
+
+| Table | What it is |
+|---|---|
+| `whybot.yellow_daily` | Cached SchemaStore view over the real TLC yellow trips in `NY_TAXI.yellow_taxi` (38.7M rows): trips, avg_total_amount and avg_trip_distance per day, 2024-04-01 to 2025-02-28 |
+| `whybot.nyc_weather_daily` | NOAA GHCN-Daily, Central Park USW00094728 (CC0): precipitation, snow and temperature per day, up to 2025-02-05 |
+| `whybot.us_holidays` | Nager.Date US holidays 2024-2025 via the `HOLIDAYS_REST` REST source: the authoritative holiday evidence |
+| `TPCDS_DB.date_dim` | Calendar (day names). Its `d_holiday` flag is **synthetic**, so it is used only by the Critic's data-quality cross-check |
+| `NY_TAXI.taxi_zones` | Real TLC zone lookup |
+
+The synthetic `NY_TAXI` tables (`trips`, `weather_data`, `surge_pricing`, `driver_shifts`, …) are excluded from evidence on purpose. Raw `NY_TAXI.yellow_taxi` is opt-in, because an uncached scan takes about 170 s.
 
 ## Run
 
@@ -100,9 +112,9 @@ API: `POST /run` (blocking, hackathon JSON shape), `POST /runs` + `GET /runs/{id
 
 | Mode | What it is |
 |---|---|
-| `DATA_SOURCE=zetaris` (default) | Live Zetaris over JDBC. If Zetaris is unreachable and recorded fixtures exist, the run falls back to replay and says so in the trace. |
+| `DATA_SOURCE=zetaris` (default) | Live Zetaris over JDBC. If Zetaris is unreachable and recorded fixtures exist, the run falls back to replay and says so in the trace. A typical live run takes 4 to 8 minutes; the wall-clock time is recorded in each trace's `finish` event and in `result.wall_clock`. |
 | `SAMPLE_MODE=true` | Replays **recorded real Zetaris query results** from `fixtures/recorded`, labelled "RECORDED". Without an NVIDIA key it also replays the recorded LLM responses of that run, so it works fully offline. Record with `scripts/record_fixtures.py` against live Zetaris. |
-| `DATA_SOURCE=dev` | **DEV-ONLY** DuckDB over a small public sample (`scripts/fetch_dev_data.py`). It is not Zetaris, is shown with a red banner in the UI, and is never used for the demo. |
+| `DATA_SOURCE=dev` | **DEV-ONLY** DuckDB over a small public Jan-Feb 2024 sample (`scripts/fetch_dev_data.py`), used before Zetaris was up. It is not Zetaris, is shown with a red banner in the UI, and is never used for the demo. |
 
 **Docker**
 
@@ -114,11 +126,11 @@ docker run --rm -p 8000:8000 -e SAMPLE_MODE=true whybot       # recorded replay,
 
 ## Sample questions
 
-1. `input_examples/example_1.json`: *Why did NYC yellow taxi trips drop on Tuesday 13 Feb 2024 compared with the other Tuesdays in February 2024?* (expected: snowstorm)
-2. `input_examples/example_2.json`: *Why were yellow taxi trips on Monday 19 Feb 2024 lower than on the other Mondays of February 2024?* (expected: Presidents' Day; weather should be rejected)
-3. `input_examples/example_3.json`: *Why was the average yellow taxi fare per trip on 1 Jan 2024 higher than the January 2024 daily average?* (expected: holiday + trip/zone mix)
+1. `input_examples/example_1.json` (**headline demo**): *Why did NYC yellow taxi trips drop on Thursday 28 Nov 2024 compared with the surrounding weeks?* (Thanksgiving. It also rained that day, and the Critic has to separate the two causes.)
+2. `input_examples/example_2.json`: *Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?* (The naive weather hypothesis is tested against the numbers.)
+3. `input_examples/example_3.json`: *Why did the average total amount per yellow taxi trip jump on Monday 20 Jan 2025 compared with the other Mondays in January 2025?* (Fare mix and data quality. This one may end in honest escalation.)
 
-Outputs go to `output_examples/` (recorded from live Zetaris once it is up). Dev-source traces are in `logs/samples/` and are labelled DEV-ONLY.
+`output_examples/` holds the full JSON results of the recorded **live Zetaris** runs. Their traces are `logs/recorded-*.jsonl`. `logs/samples/DEV-ONLY-*` is an early trace from the dev stand-in.
 
 ## Logs and traces
 
@@ -130,7 +142,7 @@ Each run writes `logs/<run_id>.jsonl`, one event per line: `timestamp, run_id, s
 .venv/bin/python -m pytest -q
 ```
 
-The tests use a scripted fake LLM and a fake data source, with no network. They cover the number checks, every branch of the decision policy (accept, retry, cap, early escalation, timeout), SQL repair, then critic retry, then accept; escalation after 3 iterations; Writer citation retry; query fallback; planner catalog validation; the SQL guard; reasoning stripping; replay hit, miss and refusal; result-sanity checks; and secret redaction in traces.
+The tests use a scripted fake LLM and a fake data source, with no network (34 tests). They cover the number checks, every branch of the decision policy (accept, retry, cap, early escalation, timeout), SQL repair, then critic retry, then accept; escalation after 3 iterations; Writer citation retry; query fallback; planner catalog validation; the SQL guard; reasoning stripping; replay hit, miss and refusal; result-sanity checks; the holiday data-quality check; the API and SSE endpoints; and secret redaction in traces.
 
 ## Status and roadmap
 
@@ -138,10 +150,11 @@ The tests use a scripted fake LLM and a fake data source, with no network. They 
 - [x] Meterless H-MEM / World Model / Markovian integration through the Node bridge
 - [x] NVIDIA Nemotron (Ultra + Lightning) with JSON validation and retry
 - [x] JSONL traces, CLI, FastAPI, live web UI, Dockerfile, tests
-- [x] Zetaris JDBC adapter, recording wrapper and replay source (code complete)
-- [ ] **Zetaris live run**: waiting on the local instance; then run `sql/*.sql`, check the NY_TAXI year range, and match the NOAA year
-- [ ] Record real Zetaris fixtures and LLM cassettes for the 3 samples (`scripts/record_fixtures.py`), then fill `output_examples/`
-- [ ] Holidays on Zetaris (Nager.Date REST is a top-level array, a known Lightning risk; fallback is the TPCDS `date_dim` flag)
+- [x] Zetaris JDBC adapter, recording wrapper and replay source
+- [x] Live Zetaris runs (taxi × NOAA × Nager.Date REST × TPCDS) with recorded fixtures and LLM cassettes for SAMPLE_MODE
+- [x] Critic data-quality cross-check (TPCDS d_holiday vs Nager.Date)
+- [ ] Zone and fare-mix hypotheses on a cached zone-by-day view (needs a new SchemaStore view; raw scans take about 170 s)
+- [ ] Faster critic (Ultra calls take 30 to 70 s), and parallel SQL generation
 - [ ] Demo video and slides
 
 ## Pre-existing work declaration

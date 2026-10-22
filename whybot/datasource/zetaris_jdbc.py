@@ -54,17 +54,21 @@ class ZetarisJDBCSource(DataSource):
             raise DataSourceError(f"JDBC connect failed: {type(e).__name__}: {str(e)[:300]}") from e
         self._lock = threading.Lock()
         self.databases = databases
-        self.tables_allow = {t.lower() for t in (tables or [])}
+        self.tables = list(tables or [])
+        self.tables_allow = {t.lower() for t in self.tables}
+        self._active = None
         self._catalog: list[dict] | None = None
 
     def _raw(self, sql: str) -> QueryResult:
         with self._lock:
             cur = self._conn.cursor()
+            self._active = cur
             try:
                 cur.execute(sql)
                 cols = [d[0] for d in (cur.description or [])]
                 rows = [list(r) for r in cur.fetchall()] if cols else []
             finally:
+                self._active = None
                 try:
                     cur.close()
                 except Exception:
@@ -81,6 +85,11 @@ class ZetarisJDBCSource(DataSource):
         if self._catalog is not None:
             return self._catalog
         out = []
+        if self.tables:  # explicit allowlist (incl. SchemaStore views such as whybot.yellow_daily)
+            for t in self.tables:
+                out.append({"table": t, "columns": self._columns(t), "note": ""})
+            self._catalog = out
+            return out
         for db in self.databases:
             try:
                 res = self._raw(f"SHOW LIGHTNING TABLES {db}")
@@ -102,7 +111,7 @@ class ZetarisJDBCSource(DataSource):
     def _columns(self, table: str) -> list[list[str]]:
         try:
             res = self._raw(f"DESCRIBE DATASOURCE TABLE {table}")
-            cols = [[str(r[0]), str(r[1]) if len(r) > 1 else ""] for r in res.rows if r and r[0] and not str(r[0]).startswith("#")]
+            cols = [[str(r[0]), (str(r[1]) if len(r) > 1 else "").strip('"')] for r in res.rows if r and r[0] and not str(r[0]).startswith("#")]
             if cols:
                 return cols
         except Exception:
@@ -119,6 +128,15 @@ class ZetarisJDBCSource(DataSource):
 
     def describe(self, table: str) -> list[list[str]]:
         return self._columns(table)
+
+    def cancel(self) -> None:
+        """Best effort: cancel the running JDBC statement so the session lock is released after a timeout."""
+        cur = self._active
+        try:
+            if cur is not None and getattr(cur, "_prep", None) is not None:
+                cur._prep.cancel()
+        except Exception:
+            pass
 
     def close(self) -> None:
         try:

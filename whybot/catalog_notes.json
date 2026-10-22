@@ -1,7 +1,12 @@
 {
   "_doc": "Semantic notes per table, given to the Planner and SQL agent. Domain documentation, not answers.",
-  "NY_TAXI.yellow_tripdata": "NYC TLC yellow taxi trips, one row per trip. tpep_pickup_datetime is the event time; fare_amount/total_amount in USD; PULocationID/DOLocationID join NY_TAXI.taxi_zones.LocationID. Raw months contain a few out-of-range timestamps and negative fares (data-quality checks).",
-  "NY_TAXI.taxi_zones": "TLC zone lookup: LocationID, Borough, Zone, service_zone (Airports, Yellow Zone, Boro Zone, EWR).",
-  "NOAA_GHCN_S3.noaa_ghcn_daily_2024": "NOAA GHCN-Daily, long format: one row per station, day and element. ID=station (USW00094728 Central Park, USW00014732 LaGuardia, USW00094789 JFK), DATE=yyyymmdd integer, ELEMENT in PRCP (tenths of mm), SNOW (mm), SNWD (snow depth mm), TMAX/TMIN (tenths of deg C); DATA_VALUE holds the value. Always filter one station for city weather. In Zetaris a headerless CSV exposes columns as _c0.._c7 in this order.",
-  "HOLIDAYS.us_public_holidays_2024": "US public holidays 2024 from Nager.Date. is_nationwide=false means state-only (check counties for US-NY)."
+  "whybot.yellow_daily": "Zetaris SchemaStore view (cached) over NY_TAXI.yellow_taxi (real NYC TLC yellow trips): one row per day 2024-04-01..2025-02-28. trip_date DATE, trips = trip count, avg_total_amount = mean total_amount USD per trip, avg_trip_distance = mean miles. Fast. Use for the metric, weekday baselines and fare/distance mix.",
+  "whybot.nyc_weather_daily": "Zetaris view over NOAA GHCN-Daily, Central Park station USW00094728 (real, CC0): obs_date DATE (2024-01-01..2025-02-05), prcp_mm (mm), snow_mm (mm snowfall), tmax_c, tmin_c (deg C). Join on obs_date = trip_date.",
+  "whybot.us_holidays": "Zetaris view over Nager.Date REST (real US holidays 2024-2025): holiday_date DATE, holiday_name, is_national (true = federal, false = state-only). The authoritative holiday source.",
+  "TPCDS_DB.date_dim": "TPC-DS calendar: d_date DATE, d_day_name, d_dow (0=Sunday), d_weekend ('Y' on Fri and Sat in this build), d_holiday ('Y'/'N'). d_holiday is SYNTHETIC and unreliable; use it only to flag data-quality disagreements with whybot.us_holidays. Use d_day_name for weekdays.",
+  "NY_TAXI.taxi_zones": "Real TLC zone lookup polygons.",
+  "NY_TAXI.yellow_taxi": "Raw real TLC yellow trips (38.7M rows, all columns STRING, cast before arithmetic; pickup date = to_date(substr(tpep_pickup_datetime,1,10))). Uncached scan ~170 s: at most one narrow query. Contains outlier timestamps (2002, 2026).",
+  "NY_TAXI.yellow_tripdata": "DEV-ONLY sample: NYC TLC yellow taxi trips Jan-Feb 2024, one row per trip.",
+  "NOAA_GHCN_S3.noaa_ghcn_daily_2024": "DEV-ONLY sample: NOAA GHCN-Daily long format (ID station, DATE yyyymmdd int, ELEMENT PRCP tenths mm / SNOW mm / TMAX,TMIN tenths C, DATA_VALUE). Filter ID='USW00094728' (Central Park).",
+  "HOLIDAYS.us_public_holidays_2024": "DEV-ONLY sample: US public holidays 2024 (Nager.Date)."
 }

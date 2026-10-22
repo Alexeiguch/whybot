@@ -137,3 +137,23 @@ def test_structured_error_when_source_unavailable(settings):
     llm = FakeLLM({"planner": [PLAN]})
     res = WhyBot(settings, llm=llm, use_meterless=False, echo=False).run("why?")
     assert res["status"] == "error" and res["error"]["recoverable"] is True
+
+
+def test_holiday_data_quality_check_flags_disagreement_as_note(settings):
+    from conftest import QR as _QR
+    from whybot.orchestrator import WhyBot as _WB
+    from whybot.schemas import Plan
+    from whybot.trace import Tracer
+
+    class DQSource(FakeSource):
+        def catalog(self):
+            return super().catalog() + [{"table": "TPCDS_DB.date_dim", "columns": [], "note": ""},
+                                        {"table": "whybot.us_holidays", "columns": [], "note": ""}]
+    ds = DQSource([("tpcds_db.date_dim d left join", _QR(["cal_date", "tpcds_d_holiday", "nager_holiday"],
+                                                          [["2024-11-28", "N", "Thanksgiving Day"], ["2024-12-25", "Y", "Christmas Day"], ["2024-12-31", "Y", None]]))])
+    ev = {}
+    tr = Tracer("dq", settings.logs_dir, echo=False)
+    p = Plan(metric="m", target_window="2024-11-28", baseline_window="b", hypotheses=[], queries=[])
+    notes = _WB(settings, datasource=ds, use_meterless=False)._holiday_dq_check("why 28 Nov 2024", p, [c["table"] for c in ds.catalog()], ds, tr, ev)
+    assert len(notes) == 2 and "Thanksgiving" in notes[0] and "2024-12-31" in notes[1]
+    assert ev["DQ1"].hypothesis_id == "data_quality"
