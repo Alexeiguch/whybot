@@ -40,7 +40,7 @@ class SQLDraft(BaseModel):
 class CitedValue(BaseModel):
     qid: str
     column: str
-    value: float | int | str
+    value: float | int | str | None = Field(description="the exact cell value; null only when the cell itself is NULL")
     row_hint: str = Field(default="", description="column=value identifying the row, e.g. trip_date=2024-02-13")
 
 

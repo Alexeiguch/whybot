@@ -562,8 +562,11 @@ class WhyBot:
         from .schemas import Citation, FinalClaim
         fc = [FinalClaim(text=c["statement"], citations=[Citation(qid=q, sql_hash=evidence[q].sql_hash, table=evidence[q].primary_table)
                                                           for q in sorted({cv["qid"] for cv in c["cited_values"]})]) for c in supported]
-        ans = FinalAnswer(headline=("Insufficient evidence" if status != "answered" else "Verified findings") + f" for: {question}",
-                          answer="The Writer could not produce a valid cited answer; these are the critic-verified claims verbatim.",
+        lead = supported[0]["statement"] if supported else ""
+        head = (lead[:160] if status == "answered" and lead else
+                ("Insufficient evidence" if status != "answered" else "Verified findings") + f" for: {question}")
+        ans = FinalAnswer(headline=head,
+                          answer=" ".join(c["statement"] for c in supported[:4]) or "No claim survived the Critic.",
                           recommendation="Review the verified claims and evidence table.", claims=fc,
                           caveats=["Writer fallback: deterministic rendering of verified claims"], confidence=0.3)
         ans = drop_uncited(ans, evidence, allowed)

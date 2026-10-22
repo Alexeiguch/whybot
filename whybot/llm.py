@@ -101,7 +101,10 @@ class BaseLLM:
         messages = [{"role": "system", "content": sys_msg}, {"role": "user", "content": user}]
         errors: list[str] = []
         meta: dict = {}
-        for attempt in range(1, max_attempts + 1):
+        transport_failures = 0
+        attempt = 0
+        while attempt < max_attempts:
+            attempt += 1
             if self.deadline is not None and self.deadline - time.time() < 5:
                 raise LLMError(f"{role}: run budget exhausted")
             try:
@@ -110,9 +113,11 @@ class BaseLLM:
                 errors.append(str(e))
                 if self.on_call:
                     self.on_call({"role": role, "event": "llm_error_retry", "attempt": attempt, "error": str(e)[:300]})
-                if "budget exhausted" in str(e) or "cassette" in str(e):
+                if "budget exhausted" in str(e) or "cassette" in str(e) or transport_failures >= 2:
                     break
-                time.sleep(min(2 ** attempt, 8))   # back off on 429/5xx/timeouts
+                transport_failures += 1
+                attempt -= 1                         # a 429/5xx/timeout does not use up a validation attempt
+                time.sleep(min(2 ** transport_failures, 8))
                 continue
             meta = {**meta, "attempt": attempt}
             if meta.get("finish_reason") == "length":

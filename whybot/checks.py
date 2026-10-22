@@ -235,7 +235,7 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
     return problems
 
 
-_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+20\d\d)?\b"
+_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+20\d\d)?\b"
                       r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?\b|\b20\d\d\b", re.I)
 _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k\b|%|x\b|×)?", re.I)
 
@@ -243,9 +243,9 @@ _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k
 def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
     """Every number written in the final answer must be a cell of allowed evidence, a verified derived value, or a
     percentage/ratio between two such cells (0.5 pp tolerance). Dates, years and small counts (<= 12) are exempt."""
+    # Any cell of a successful query is a real, recorded number; claims still may only CITE critic-supported queries.
     pool = [abs(float(x)) for x in extra_values]
-    for q in allowed_qids:
-        ev = evidence.get(q)
+    for q, ev in evidence.items():
         if ev and ev.status == "ok":
             for r in ev.rows:
                 pool += [abs(n) for n in (_num(v) for v in r) if n is not None]
