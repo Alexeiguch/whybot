@@ -6,6 +6,10 @@ A team of agents forms hypotheses, tests them with SQL that reads each source in
 
 Built for the GenAI Works **Open Agent Hackathon 2026, Track 2: "The Agent That Can Explain Why"**.
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/Alexeiguch/whybot?quickstart=1)
+
+**Try it in the [WhyBot Playground](PLAYGROUND.md):** open the Codespace above (no keys needed) or run `bash playground/run.sh` and go to http://localhost:7860. It replays the three recorded live runs with the agent timeline, Critic REJECT and RETRY, the SQL behind each claim (click a claim to see it), and a downloadable JSONL trace. Paste an NVIDIA key to run it live.
+
 > **Status: work in progress (built from 22 Oct 2026).** End-to-end runs work against a **live local Zetaris 2.4.3.1** instance over JDBC, with Meterless memory and NVIDIA Nemotron. Real traces are in `logs/recorded-*.jsonl`, and recorded Zetaris results for `SAMPLE_MODE` are in `fixtures/recorded/`. See [Status and roadmap](#status-and-roadmap).
 
 ---
