@@ -339,3 +339,51 @@ def test_zetaris_rows_normalise_boxed_java_values():
     assert row == [True, 77244, 2.5, "x", None]
     assert [type(v) for v in row[:2]] == [bool, int]
     assert [str(v) for v in json.loads(json.dumps(row))] == [str(v) for v in row]
+
+
+@pytest.mark.parametrize("sql", [
+    "SELECT * FROM whybot.yellow_daily, NY_TAXI.trips",
+    "SELECT * FROM `NY_TAXI`.`trips`",
+    'SELECT * FROM "NY_TAXI"."trips"',
+    "SELECT * FROM NY_TAXI . trips",
+    "SELECT * FROM trips",
+    "SELECT * FROM whybot.yellow_daily d JOIN (SELECT * FROM ny_taxi.trips) t ON t.d = d.trip_date",
+    "WITH x AS (SELECT * FROM ny_taxi.trips) SELECT * FROM x",
+    "SELECT * FROM range(10)",
+])
+def test_table_allowlist_uses_a_real_parse(sql):
+    with pytest.raises(DataSourceError):
+        guard_sql(sql, allowed_tables={"whybot.yellow_daily", "whybot.nyc_weather_daily"})
+
+
+def test_table_allowlist_accepts_quoted_mixed_case_ctes_and_joins():
+    allowed = {"whybot.yellow_daily", "whybot.nyc_weather_daily"}
+    for sql in ("SELECT * FROM `whybot`.`Yellow_Daily`",
+                "WITH t AS (SELECT trip_date, trips FROM whybot.yellow_daily) SELECT t.trips, w.prcp_mm FROM t "
+                "JOIN whybot.nyc_weather_daily w ON w.obs_date = t.trip_date"):
+        assert guard_sql(sql, allowed_tables=allowed).endswith("LIMIT 500")
+
+
+def test_limit_is_capped_at_500():
+    assert guard_sql("select 1 limit 100000000") == "select 1 limit 500"
+    assert guard_sql("select 1 limit 20") == "select 1 limit 20"
+    assert guard_sql("select 1", default_limit=10_000).endswith("LIMIT 500")
+
+
+def test_allowlist_fails_closed_when_the_catalog_fails():
+    from whybot.datasource.base import DataSource
+
+    class Broken(DataSource):
+        def catalog(self):
+            raise RuntimeError("catalog down")
+
+        def _execute(self, sql):
+            raise AssertionError("must not execute")
+
+    class Empty(Broken):
+        def catalog(self):
+            return []
+
+    for ds in (Broken(), Empty()):
+        with pytest.raises(DataSourceError, match="catalog"):
+            ds.run("SELECT * FROM NY_TAXI.trips")

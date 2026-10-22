@@ -40,11 +40,47 @@ def sql_hash(sql: str) -> str:
 
 _FORBIDDEN = re.compile(r"\b(insert|update|delete|merge|drop|create|alter|truncate|grant|revoke|cache|uncache|refresh|call|exec|copy|attach|install|load|pragma|set)\b", re.I)
 _FORBIDDEN_FN = re.compile(r"\b(reflect|try_reflect|java_method|input_file_name|current_user|session_user|user|getenv|read_text|read_csv|read_parquet|read_json|system)\s*\(", re.I)
-_TABLE_REF = re.compile(r"\b(?:from|join)\s+([A-Za-z_][\w]*\.[A-Za-z_][\w]*)", re.I)
+MAX_ROWS = 500
+_TRAILING_LIMIT = re.compile(r"(?is)\blimit\s+(\d+)\s*$")
 
 
-def guard_sql(sql: str, default_limit: int = 500, allowed_tables: set[str] | None = None) -> str:
-    """Allow a single read-only SELECT/WITH statement over allowlisted tables; append a LIMIT when missing."""
+def referenced_tables(sql: str) -> set[str]:
+    """Every table the statement reads, from a real parse (Spark SQL, which Zetaris Lightning speaks).
+
+    Quotes and case are normalised; CTE names are not tables. Unqualified names, table functions and anything
+    the parser cannot read raise, so a query the check cannot understand is refused rather than waved through.
+    """
+    import sqlglot
+    from sqlglot import exp
+    from sqlglot.errors import SqlglotError
+
+    try:
+        trees = [t for t in sqlglot.parse(sql, read="spark") if t is not None]
+    except SqlglotError as e:
+        raise DataSourceError(f"could not parse the query to check which tables it reads: {str(e).splitlines()[0][:200]}")
+    if len(trees) != 1:
+        raise DataSourceError("multiple statements are not allowed")
+    tree = trees[0]
+    ctes = {c.alias_or_name.lower() for c in tree.find_all(exp.CTE)}
+    out: set[str] = set()
+    for t in tree.find_all(exp.Table):
+        if not isinstance(t.this, exp.Identifier):
+            raise DataSourceError("table functions are not allowed; read a catalogued table by its full two-part name")
+        name = t.name
+        if not t.db:
+            if name.lower() in ctes:
+                continue
+            raise DataSourceError(f"unqualified table '{name}': use the full two-part name, e.g. whybot.yellow_daily")
+        out.add(".".join(p for p in (t.catalog, t.db, name) if p).lower())
+    return out
+
+
+def guard_sql(sql: str, default_limit: int = MAX_ROWS, allowed_tables: set[str] | None = None) -> str:
+    """Allow a single read-only SELECT/WITH statement over allowlisted tables; add or clamp the LIMIT to MAX_ROWS.
+
+    allowed_tables=None skips only the table check (used to pre-normalise SQL); DataSource.run always passes the
+    catalog, and DataSource.allowed_tables raises when the catalog is unavailable, so execution fails closed.
+    """
     s = normalize_sql(sql)
     stripped = _LIT.sub("''", s)
     if ";" in stripped:
@@ -58,12 +94,16 @@ def guard_sql(sql: str, default_limit: int = 500, allowed_tables: set[str] | Non
     if m:
         raise DataSourceError(f"forbidden function in query: {m.group(1)}")
     if allowed_tables is not None:
-        refs = {r.lower() for r in _TABLE_REF.findall(stripped)}
+        refs = referenced_tables(s)
         bad = sorted(refs - {t.lower() for t in allowed_tables})
         if bad:
             raise DataSourceError(f"table(s) not in the evidence allowlist: {', '.join(bad)} (allowed: {', '.join(sorted(allowed_tables))})")
-    if not re.search(r"(?is)\blimit\s+\d+\s*$", s):
-        s = f"{s} LIMIT {default_limit}"
+    cap = min(default_limit, MAX_ROWS)
+    m = _TRAILING_LIMIT.search(s)
+    if not m:
+        s = f"{s} LIMIT {cap}"
+    elif int(m.group(1)) > cap:
+        s = s[:m.start(1)] + str(cap)
     return s
 
 
@@ -122,11 +162,15 @@ class DataSource:
     def _execute(self, sql: str) -> QueryResult:
         raise NotImplementedError
 
-    def allowed_tables(self) -> set[str] | None:
+    def allowed_tables(self) -> set[str]:
+        """The catalogue is the allowlist. If it cannot be read, no query runs (fail closed)."""
         try:
-            return {t["table"].lower() for t in self.catalog()}
-        except Exception:
-            return None
+            tables = {t["table"].lower() for t in self.catalog()}
+        except Exception as e:
+            raise DataSourceError(f"catalog unavailable, so no query can be checked against the allowlist: {str(e)[:200]}")
+        if not tables:
+            raise DataSourceError("catalog is empty, so no query can be checked against the allowlist")
+        return tables
 
     def run(self, sql: str, timeout_s: float = 60.0) -> QueryResult:
         sql = guard_sql(sql, allowed_tables=self.allowed_tables())

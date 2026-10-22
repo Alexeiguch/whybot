@@ -6,7 +6,7 @@ import re
 import threading
 from pathlib import Path
 
-from .base import DataSource, DataSourceError, QueryResult
+from .base import MAX_ROWS, DataSource, DataSourceError, QueryResult
 
 DRIVER_CLASS = "com.zetaris.lightning.jdbc.LightningDriver"
 DEFAULT_URL = "jdbc:zetaris:lightning@localhost:10000"
@@ -96,7 +96,8 @@ class ZetarisJDBCSource(DataSource):
         if not self._lock.acquire(timeout=self.LOCK_TIMEOUT_S):
             raise DataSourceError("Zetaris session busy: a previous query is still running (lock timeout)")
 
-    def _raw(self, sql: str) -> QueryResult:
+    def _raw(self, sql: str, cap: int | None = None) -> QueryResult:
+        """cap: fetch at most cap+1 rows (agent queries); None for catalogue introspection."""
         self._acquire()
         try:
             cur = self._conn.cursor()
@@ -104,7 +105,8 @@ class ZetarisJDBCSource(DataSource):
             try:
                 cur.execute(sql)
                 cols = [d[0] for d in (cur.description or [])]
-                rows = [[to_python(v) for v in r] for r in cur.fetchall()] if cols else []
+                fetched = (cur.fetchmany(cap + 1) if cap else cur.fetchall()) if cols else []
+                rows = [[to_python(v) for v in r] for r in fetched]
             finally:
                 self._active = None
                 try:
@@ -113,11 +115,11 @@ class ZetarisJDBCSource(DataSource):
                     pass
         finally:
             self._lock.release()
-        return QueryResult(columns=cols, rows=rows[:500], source_label=self.label, meta={"rows_total": len(rows)})
+        return QueryResult(columns=cols, rows=rows[:cap] if cap else rows, source_label=self.label, meta={"rows_total": len(rows)})
 
     def _execute(self, sql: str) -> QueryResult:
         try:
-            return self._raw(sql)
+            return self._raw(sql, cap=MAX_ROWS)
         except Exception as e:
             raise DataSourceError(f"Zetaris error: {str(e)[:600]}") from e
 
