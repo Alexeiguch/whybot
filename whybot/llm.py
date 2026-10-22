@@ -1,6 +1,7 @@
 """LLM access. NVIDIA build (OpenAI-compatible) with Nemotron models, JSON outputs validated by pydantic, retried with feedback."""
 from __future__ import annotations
 
+import concurrent.futures
 import hashlib
 import json
 import os
@@ -61,6 +62,9 @@ def extract_json(text: str) -> Any:
             if depth == 0:
                 return json.loads(text[start:i + 1])
     raise ValueError("unterminated JSON object in model output")
+
+
+_WATCHDOG = concurrent.futures.ThreadPoolExecutor(max_workers=8, thread_name_prefix="llm-call")
 
 
 def prompt_sha(messages: list[dict]) -> str:
@@ -167,12 +171,19 @@ class NvidiaLLM(BaseLLM):
         thinking = role in self.thinking_roles
         timeout = self._timeout()
         t0 = time.time()
-        try:
-            r = self.client.with_options(timeout=timeout).chat.completions.create(
+        def call():
+            return self.client.with_options(timeout=timeout).chat.completions.create(
                 model=model, messages=messages, temperature=temperature,
                 max_tokens=max_tokens + (8000 if thinking else 0),
                 extra_body={"chat_template_kwargs": {"enable_thinking": thinking}},
             )
+        # Hard watchdog: a stalled TLS read was observed to outlive the client timeout, so the call runs in a worker
+        # thread and is abandoned (the daemon thread finishes or dies with the process) once the budget is spent.
+        fut = _WATCHDOG.submit(call)
+        try:
+            r = fut.result(timeout=timeout + 5)
+        except concurrent.futures.TimeoutError as e:
+            raise LLMError(f"{model}: watchdog timeout after {timeout + 5:.0f}s") from e
         except Exception as e:
             raise LLMError(f"{model}: {type(e).__name__}: {str(e)[:300]}") from e
         msg = r.choices[0].message
