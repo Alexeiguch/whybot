@@ -1,0 +1,15 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date IN (DATE '2024-12-20', DATE '2024-12-23') ORDER BY h.holiday_date LIMIT 500",
+ "sql_hash": "sha256:6aa16319ad627545",
+ "recorded_at": "2026-10-22T14:13:38+00:00",
+ "columns": [
+  "holiday_date",
+  "holiday_name",
+  "is_national"
+ ],
+ "rows": [],
+ "elapsed_s": 0.807,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 0
+}

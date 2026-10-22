@@ -1,0 +1,41 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, avg_total_amount AS avg_total_amount, trips AS trips, avg_trip_distance AS avg_trip_distance FROM whybot.yellow_daily WHERE trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-20', DATE '2025-01-27') ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:b3461d344ed78e7b",
+ "recorded_at": "2026-10-22T14:16:39+00:00",
+ "columns": [
+  "trip_date",
+  "avg_total_amount",
+  "trips",
+  "avg_trip_distance"
+ ],
+ "rows": [
+  [
+   "2025-01-06",
+   27.62888127597372,
+   80127,
+   4.401827349083319
+  ],
+  [
+   "2025-01-13",
+   26.1535106277113,
+   100492,
+   5.534596485292359
+  ],
+  [
+   "2025-01-20",
+   36.480323772947045,
+   90094,
+   4.786531511532389
+  ],
+  [
+   "2025-01-27",
+   26.388509993551974,
+   93060,
+   4.52155716741887
+  ]
+ ],
+ "elapsed_s": 8.914,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

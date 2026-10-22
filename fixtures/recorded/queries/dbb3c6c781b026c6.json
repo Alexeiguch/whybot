@@ -1,0 +1,2516 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT tz.zone, tz.LocationID, CASE WHEN tz.zone LIKE '%JFK%' THEN 'JFK' WHEN tz.zone LIKE '%LGA%' THEN 'LGA' WHEN tz.zone LIKE '%Newark%' THEN 'Newark' WHEN tz.borough = 'Manhattan' THEN 'Manhattan' ELSE 'Other' END AS zone_category FROM NY_TAXI.taxi_zones tz WHERE tz.LocationID IS NOT NULL ORDER BY zone_category, tz.zone LIMIT 500",
+ "sql_hash": "sha256:dbb3c6c781b026c6",
+ "recorded_at": "2026-10-22T14:24:58+00:00",
+ "columns": [
+  "zone",
+  "LocationID",
+  "zone_category"
+ ],
+ "rows": [
+  [
+   "JFK Airport",
+   "132",
+   "JFK"
+  ],
+  [
+   "JFK Airport",
+   "132",
+   "JFK"
+  ],
+  [
+   "JFK Airport",
+   "132",
+   "JFK"
+  ],
+  [
+   "Alphabet City",
+   "4",
+   "Manhattan"
+  ],
+  [
+   "Alphabet City",
+   "4",
+   "Manhattan"
+  ],
+  [
+   "Alphabet City",
+   "4",
+   "Manhattan"
+  ],
+  [
+   "Battery Park",
+   "12",
+   "Manhattan"
+  ],
+  [
+   "Battery Park",
+   "12",
+   "Manhattan"
+  ],
+  [
+   "Battery Park",
+   "12",
+   "Manhattan"
+  ],
+  [
+   "Battery Park City",
+   "13",
+   "Manhattan"
+  ],
+  [
+   "Battery Park City",
+   "13",
+   "Manhattan"
+  ],
+  [
+   "Battery Park City",
+   "13",
+   "Manhattan"
+  ],
+  [
+   "Bloomingdale",
+   "24",
+   "Manhattan"
+  ],
+  [
+   "Bloomingdale",
+   "24",
+   "Manhattan"
+  ],
+  [
+   "Bloomingdale",
+   "24",
+   "Manhattan"
+  ],
+  [
+   "Central Harlem",
+   "41",
+   "Manhattan"
+  ],
+  [
+   "Central Harlem",
+   "41",
+   "Manhattan"
+  ],
+  [
+   "Central Harlem",
+   "41",
+   "Manhattan"
+  ],
+  [
+   "Central Harlem North",
+   "42",
+   "Manhattan"
+  ],
+  [
+   "Central Harlem North",
+   "42",
+   "Manhattan"
+  ],
+  [
+   "Central Harlem North",
+   "42",
+   "Manhattan"
+  ],
+  [
+   "Central Park",
+   "43",
+   "Manhattan"
+  ],
+  [
+   "Central Park",
+   "43",
+   "Manhattan"
+  ],
+  [
+   "Central Park",
+   "43",
+   "Manhattan"
+  ],
+  [
+   "Chinatown",
+   "45",
+   "Manhattan"
+  ],
+  [
+   "Chinatown",
+   "45",
+   "Manhattan"
+  ],
+  [
+   "Chinatown",
+   "45",
+   "Manhattan"
+  ],
+  [
+   "Clinton East",
+   "48",
+   "Manhattan"
+  ],
+  [
+   "Clinton East",
+   "48",
+   "Manhattan"
+  ],
+  [
+   "Clinton East",
+   "48",
+   "Manhattan"
+  ],
+  [
+   "Clinton West",
+   "50",
+   "Manhattan"
+  ],
+  [
+   "Clinton West",
+   "50",
+   "Manhattan"
+  ],
+  [
+   "Clinton West",
+   "50",
+   "Manhattan"
+  ],
+  [
+   "East Chelsea",
+   "68",
+   "Manhattan"
+  ],
+  [
+   "East Chelsea",
+   "68",
+   "Manhattan"
+  ],
+  [
+   "East Chelsea",
+   "68",
+   "Manhattan"
+  ],
+  [
+   "East Harlem North",
+   "74",
+   "Manhattan"
+  ],
+  [
+   "East Harlem North",
+   "74",
+   "Manhattan"
+  ],
+  [
+   "East Harlem North",
+   "74",
+   "Manhattan"
+  ],
+  [
+   "East Harlem South",
+   "75",
+   "Manhattan"
+  ],
+  [
+   "East Harlem South",
+   "75",
+   "Manhattan"
+  ],
+  [
+   "East Harlem South",
+   "75",
+   "Manhattan"
+  ],
+  [
+   "East Village",
+   "79",
+   "Manhattan"
+  ],
+  [
+   "East Village",
+   "79",
+   "Manhattan"
+  ],
+  [
+   "East Village",
+   "79",
+   "Manhattan"
+  ],
+  [
+   "Financial District North",
+   "87",
+   "Manhattan"
+  ],
+  [
+   "Financial District North",
+   "87",
+   "Manhattan"
+  ],
+  [
+   "Financial District North",
+   "87",
+   "Manhattan"
+  ],
+  [
+   "Financial District South",
+   "88",
+   "Manhattan"
+  ],
+  [
+   "Financial District South",
+   "88",
+   "Manhattan"
+  ],
+  [
+   "Financial District South",
+   "88",
+   "Manhattan"
+  ],
+  [
+   "Flatiron",
+   "90",
+   "Manhattan"
+  ],
+  [
+   "Flatiron",
+   "90",
+   "Manhattan"
+  ],
+  [
+   "Flatiron",
+   "90",
+   "Manhattan"
+  ],
+  [
+   "Garment District",
+   "100",
+   "Manhattan"
+  ],
+  [
+   "Garment District",
+   "100",
+   "Manhattan"
+  ],
+  [
+   "Garment District",
+   "100",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Governor's Island/Ellis Island/Liberty Island",
+   "103",
+   "Manhattan"
+  ],
+  [
+   "Gramercy",
+   "107",
+   "Manhattan"
+  ],
+  [
+   "Gramercy",
+   "107",
+   "Manhattan"
+  ],
+  [
+   "Gramercy",
+   "107",
+   "Manhattan"
+  ],
+  [
+   "Greenwich Village North",
+   "113",
+   "Manhattan"
+  ],
+  [
+   "Greenwich Village North",
+   "113",
+   "Manhattan"
+  ],
+  [
+   "Greenwich Village North",
+   "113",
+   "Manhattan"
+  ],
+  [
+   "Greenwich Village South",
+   "114",
+   "Manhattan"
+  ],
+  [
+   "Greenwich Village South",
+   "114",
+   "Manhattan"
+  ],
+  [
+   "Greenwich Village South",
+   "114",
+   "Manhattan"
+  ],
+  [
+   "Hamilton Heights",
+   "116",
+   "Manhattan"
+  ],
+  [
+   "Hamilton Heights",
+   "116",
+   "Manhattan"
+  ],
+  [
+   "Hamilton Heights",
+   "116",
+   "Manhattan"
+  ],
+  [
+   "Highbridge Park",
+   "120",
+   "Manhattan"
+  ],
+  [
+   "Highbridge Park",
+   "120",
+   "Manhattan"
+  ],
+  [
+   "Highbridge Park",
+   "120",
+   "Manhattan"
+  ],
+  [
+   "Hudson Sq",
+   "125",
+   "Manhattan"
+  ],
+  [
+   "Hudson Sq",
+   "125",
+   "Manhattan"
+  ],
+  [
+   "Hudson Sq",
+   "125",
+   "Manhattan"
+  ],
+  [
+   "Inwood",
+   "127",
+   "Manhattan"
+  ],
+  [
+   "Inwood",
+   "127",
+   "Manhattan"
+  ],
+  [
+   "Inwood",
+   "127",
+   "Manhattan"
+  ],
+  [
+   "Inwood Hill Park",
+   "128",
+   "Manhattan"
+  ],
+  [
+   "Inwood Hill Park",
+   "128",
+   "Manhattan"
+  ],
+  [
+   "Inwood Hill Park",
+   "128",
+   "Manhattan"
+  ],
+  [
+   "Kips Bay",
+   "137",
+   "Manhattan"
+  ],
+  [
+   "Kips Bay",
+   "137",
+   "Manhattan"
+  ],
+  [
+   "Kips Bay",
+   "137",
+   "Manhattan"
+  ],
+  [
+   "Lenox Hill East",
+   "140",
+   "Manhattan"
+  ],
+  [
+   "Lenox Hill East",
+   "140",
+   "Manhattan"
+  ],
+  [
+   "Lenox Hill East",
+   "140",
+   "Manhattan"
+  ],
+  [
+   "Lenox Hill West",
+   "141",
+   "Manhattan"
+  ],
+  [
+   "Lenox Hill West",
+   "141",
+   "Manhattan"
+  ],
+  [
+   "Lenox Hill West",
+   "141",
+   "Manhattan"
+  ],
+  [
+   "Lincoln Square East",
+   "142",
+   "Manhattan"
+  ],
+  [
+   "Lincoln Square East",
+   "142",
+   "Manhattan"
+  ],
+  [
+   "Lincoln Square East",
+   "142",
+   "Manhattan"
+  ],
+  [
+   "Lincoln Square West",
+   "143",
+   "Manhattan"
+  ],
+  [
+   "Lincoln Square West",
+   "143",
+   "Manhattan"
+  ],
+  [
+   "Lincoln Square West",
+   "143",
+   "Manhattan"
+  ],
+  [
+   "Little Italy/NoLiTa",
+   "144",
+   "Manhattan"
+  ],
+  [
+   "Little Italy/NoLiTa",
+   "144",
+   "Manhattan"
+  ],
+  [
+   "Little Italy/NoLiTa",
+   "144",
+   "Manhattan"
+  ],
+  [
+   "Lower East Side",
+   "148",
+   "Manhattan"
+  ],
+  [
+   "Lower East Side",
+   "148",
+   "Manhattan"
+  ],
+  [
+   "Lower East Side",
+   "148",
+   "Manhattan"
+  ],
+  [
+   "Manhattan Valley",
+   "151",
+   "Manhattan"
+  ],
+  [
+   "Manhattan Valley",
+   "151",
+   "Manhattan"
+  ],
+  [
+   "Manhattan Valley",
+   "151",
+   "Manhattan"
+  ],
+  [
+   "Manhattanville",
+   "152",
+   "Manhattan"
+  ],
+  [
+   "Manhattanville",
+   "152",
+   "Manhattan"
+  ],
+  [
+   "Manhattanville",
+   "152",
+   "Manhattan"
+  ],
+  [
+   "Marble Hill",
+   "153",
+   "Manhattan"
+  ],
+  [
+   "Marble Hill",
+   "153",
+   "Manhattan"
+  ],
+  [
+   "Marble Hill",
+   "153",
+   "Manhattan"
+  ],
+  [
+   "Meatpacking/West Village West",
+   "158",
+   "Manhattan"
+  ],
+  [
+   "Meatpacking/West Village West",
+   "158",
+   "Manhattan"
+  ],
+  [
+   "Meatpacking/West Village West",
+   "158",
+   "Manhattan"
+  ],
+  [
+   "Midtown Center",
+   "161",
+   "Manhattan"
+  ],
+  [
+   "Midtown Center",
+   "161",
+   "Manhattan"
+  ],
+  [
+   "Midtown Center",
+   "161",
+   "Manhattan"
+  ],
+  [
+   "Midtown East",
+   "162",
+   "Manhattan"
+  ],
+  [
+   "Midtown East",
+   "162",
+   "Manhattan"
+  ],
+  [
+   "Midtown East",
+   "162",
+   "Manhattan"
+  ],
+  [
+   "Midtown North",
+   "163",
+   "Manhattan"
+  ],
+  [
+   "Midtown North",
+   "163",
+   "Manhattan"
+  ],
+  [
+   "Midtown North",
+   "163",
+   "Manhattan"
+  ],
+  [
+   "Midtown South",
+   "164",
+   "Manhattan"
+  ],
+  [
+   "Midtown South",
+   "164",
+   "Manhattan"
+  ],
+  [
+   "Midtown South",
+   "164",
+   "Manhattan"
+  ],
+  [
+   "Morningside Heights",
+   "166",
+   "Manhattan"
+  ],
+  [
+   "Morningside Heights",
+   "166",
+   "Manhattan"
+  ],
+  [
+   "Morningside Heights",
+   "166",
+   "Manhattan"
+  ],
+  [
+   "Murray Hill",
+   "170",
+   "Manhattan"
+  ],
+  [
+   "Murray Hill",
+   "170",
+   "Manhattan"
+  ],
+  [
+   "Murray Hill",
+   "170",
+   "Manhattan"
+  ],
+  [
+   "Penn Station/Madison Sq West",
+   "186",
+   "Manhattan"
+  ],
+  [
+   "Penn Station/Madison Sq West",
+   "186",
+   "Manhattan"
+  ],
+  [
+   "Penn Station/Madison Sq West",
+   "186",
+   "Manhattan"
+  ],
+  [
+   "Randalls Island",
+   "194",
+   "Manhattan"
+  ],
+  [
+   "Randalls Island",
+   "194",
+   "Manhattan"
+  ],
+  [
+   "Randalls Island",
+   "194",
+   "Manhattan"
+  ],
+  [
+   "Roosevelt Island",
+   "202",
+   "Manhattan"
+  ],
+  [
+   "Roosevelt Island",
+   "202",
+   "Manhattan"
+  ],
+  [
+   "Roosevelt Island",
+   "202",
+   "Manhattan"
+  ],
+  [
+   "Seaport",
+   "209",
+   "Manhattan"
+  ],
+  [
+   "Seaport",
+   "209",
+   "Manhattan"
+  ],
+  [
+   "Seaport",
+   "209",
+   "Manhattan"
+  ],
+  [
+   "SoHo",
+   "211",
+   "Manhattan"
+  ],
+  [
+   "SoHo",
+   "211",
+   "Manhattan"
+  ],
+  [
+   "SoHo",
+   "211",
+   "Manhattan"
+  ],
+  [
+   "Stuy Town/Peter Cooper Village",
+   "224",
+   "Manhattan"
+  ],
+  [
+   "Stuy Town/Peter Cooper Village",
+   "224",
+   "Manhattan"
+  ],
+  [
+   "Stuy Town/Peter Cooper Village",
+   "224",
+   "Manhattan"
+  ],
+  [
+   "Sutton Place/Turtle Bay North",
+   "229",
+   "Manhattan"
+  ],
+  [
+   "Sutton Place/Turtle Bay North",
+   "229",
+   "Manhattan"
+  ],
+  [
+   "Sutton Place/Turtle Bay North",
+   "229",
+   "Manhattan"
+  ],
+  [
+   "Times Sq/Theatre District",
+   "230",
+   "Manhattan"
+  ],
+  [
+   "Times Sq/Theatre District",
+   "230",
+   "Manhattan"
+  ],
+  [
+   "Times Sq/Theatre District",
+   "230",
+   "Manhattan"
+  ],
+  [
+   "TriBeCa/Civic Center",
+   "231",
+   "Manhattan"
+  ],
+  [
+   "TriBeCa/Civic Center",
+   "231",
+   "Manhattan"
+  ],
+  [
+   "TriBeCa/Civic Center",
+   "231",
+   "Manhattan"
+  ],
+  [
+   "Two Bridges/Seward Park",
+   "232",
+   "Manhattan"
+  ],
+  [
+   "Two Bridges/Seward Park",
+   "232",
+   "Manhattan"
+  ],
+  [
+   "Two Bridges/Seward Park",
+   "232",
+   "Manhattan"
+  ],
+  [
+   "UN/Turtle Bay South",
+   "233",
+   "Manhattan"
+  ],
+  [
+   "UN/Turtle Bay South",
+   "233",
+   "Manhattan"
+  ],
+  [
+   "UN/Turtle Bay South",
+   "233",
+   "Manhattan"
+  ],
+  [
+   "Union Sq",
+   "234",
+   "Manhattan"
+  ],
+  [
+   "Union Sq",
+   "234",
+   "Manhattan"
+  ],
+  [
+   "Union Sq",
+   "234",
+   "Manhattan"
+  ],
+  [
+   "Upper East Side North",
+   "236",
+   "Manhattan"
+  ],
+  [
+   "Upper East Side North",
+   "236",
+   "Manhattan"
+  ],
+  [
+   "Upper East Side North",
+   "236",
+   "Manhattan"
+  ],
+  [
+   "Upper East Side South",
+   "237",
+   "Manhattan"
+  ],
+  [
+   "Upper East Side South",
+   "237",
+   "Manhattan"
+  ],
+  [
+   "Upper East Side South",
+   "237",
+   "Manhattan"
+  ],
+  [
+   "Upper West Side North",
+   "238",
+   "Manhattan"
+  ],
+  [
+   "Upper West Side North",
+   "238",
+   "Manhattan"
+  ],
+  [
+   "Upper West Side North",
+   "238",
+   "Manhattan"
+  ],
+  [
+   "Upper West Side South",
+   "239",
+   "Manhattan"
+  ],
+  [
+   "Upper West Side South",
+   "239",
+   "Manhattan"
+  ],
+  [
+   "Upper West Side South",
+   "239",
+   "Manhattan"
+  ],
+  [
+   "Washington Heights North",
+   "243",
+   "Manhattan"
+  ],
+  [
+   "Washington Heights North",
+   "243",
+   "Manhattan"
+  ],
+  [
+   "Washington Heights North",
+   "243",
+   "Manhattan"
+  ],
+  [
+   "Washington Heights South",
+   "244",
+   "Manhattan"
+  ],
+  [
+   "Washington Heights South",
+   "244",
+   "Manhattan"
+  ],
+  [
+   "Washington Heights South",
+   "244",
+   "Manhattan"
+  ],
+  [
+   "West Chelsea/Hudson Yards",
+   "246",
+   "Manhattan"
+  ],
+  [
+   "West Chelsea/Hudson Yards",
+   "246",
+   "Manhattan"
+  ],
+  [
+   "West Chelsea/Hudson Yards",
+   "246",
+   "Manhattan"
+  ],
+  [
+   "West Village",
+   "249",
+   "Manhattan"
+  ],
+  [
+   "West Village",
+   "249",
+   "Manhattan"
+  ],
+  [
+   "West Village",
+   "249",
+   "Manhattan"
+  ],
+  [
+   "World Trade Center",
+   "261",
+   "Manhattan"
+  ],
+  [
+   "World Trade Center",
+   "261",
+   "Manhattan"
+  ],
+  [
+   "World Trade Center",
+   "261",
+   "Manhattan"
+  ],
+  [
+   "Yorkville East",
+   "262",
+   "Manhattan"
+  ],
+  [
+   "Yorkville East",
+   "262",
+   "Manhattan"
+  ],
+  [
+   "Yorkville East",
+   "262",
+   "Manhattan"
+  ],
+  [
+   "Yorkville West",
+   "263",
+   "Manhattan"
+  ],
+  [
+   "Yorkville West",
+   "263",
+   "Manhattan"
+  ],
+  [
+   "Yorkville West",
+   "263",
+   "Manhattan"
+  ],
+  [
+   "Newark Airport",
+   "1",
+   "Newark"
+  ],
+  [
+   "Newark Airport",
+   "1",
+   "Newark"
+  ],
+  [
+   "Newark Airport",
+   "1",
+   "Newark"
+  ],
+  [
+   "Allerton/Pelham Gardens",
+   "3",
+   "Other"
+  ],
+  [
+   "Allerton/Pelham Gardens",
+   "3",
+   "Other"
+  ],
+  [
+   "Allerton/Pelham Gardens",
+   "3",
+   "Other"
+  ],
+  [
+   "Arden Heights",
+   "5",
+   "Other"
+  ],
+  [
+   "Arden Heights",
+   "5",
+   "Other"
+  ],
+  [
+   "Arden Heights",
+   "5",
+   "Other"
+  ],
+  [
+   "Arrochar/Fort Wadsworth",
+   "6",
+   "Other"
+  ],
+  [
+   "Arrochar/Fort Wadsworth",
+   "6",
+   "Other"
+  ],
+  [
+   "Arrochar/Fort Wadsworth",
+   "6",
+   "Other"
+  ],
+  [
+   "Astoria",
+   "7",
+   "Other"
+  ],
+  [
+   "Astoria",
+   "7",
+   "Other"
+  ],
+  [
+   "Astoria",
+   "7",
+   "Other"
+  ],
+  [
+   "Astoria Park",
+   "8",
+   "Other"
+  ],
+  [
+   "Astoria Park",
+   "8",
+   "Other"
+  ],
+  [
+   "Astoria Park",
+   "8",
+   "Other"
+  ],
+  [
+   "Auburndale",
+   "9",
+   "Other"
+  ],
+  [
+   "Auburndale",
+   "9",
+   "Other"
+  ],
+  [
+   "Auburndale",
+   "9",
+   "Other"
+  ],
+  [
+   "Baisley Park",
+   "10",
+   "Other"
+  ],
+  [
+   "Baisley Park",
+   "10",
+   "Other"
+  ],
+  [
+   "Baisley Park",
+   "10",
+   "Other"
+  ],
+  [
+   "Bath Beach",
+   "11",
+   "Other"
+  ],
+  [
+   "Bath Beach",
+   "11",
+   "Other"
+  ],
+  [
+   "Bath Beach",
+   "11",
+   "Other"
+  ],
+  [
+   "Bay Ridge",
+   "14",
+   "Other"
+  ],
+  [
+   "Bay Ridge",
+   "14",
+   "Other"
+  ],
+  [
+   "Bay Ridge",
+   "14",
+   "Other"
+  ],
+  [
+   "Bay Terrace/Fort Totten",
+   "15",
+   "Other"
+  ],
+  [
+   "Bay Terrace/Fort Totten",
+   "15",
+   "Other"
+  ],
+  [
+   "Bay Terrace/Fort Totten",
+   "15",
+   "Other"
+  ],
+  [
+   "Bayside",
+   "16",
+   "Other"
+  ],
+  [
+   "Bayside",
+   "16",
+   "Other"
+  ],
+  [
+   "Bayside",
+   "16",
+   "Other"
+  ],
+  [
+   "Bedford",
+   "17",
+   "Other"
+  ],
+  [
+   "Bedford",
+   "17",
+   "Other"
+  ],
+  [
+   "Bedford",
+   "17",
+   "Other"
+  ],
+  [
+   "Bedford Park",
+   "18",
+   "Other"
+  ],
+  [
+   "Bedford Park",
+   "18",
+   "Other"
+  ],
+  [
+   "Bedford Park",
+   "18",
+   "Other"
+  ],
+  [
+   "Bellerose",
+   "19",
+   "Other"
+  ],
+  [
+   "Bellerose",
+   "19",
+   "Other"
+  ],
+  [
+   "Bellerose",
+   "19",
+   "Other"
+  ],
+  [
+   "Belmont",
+   "20",
+   "Other"
+  ],
+  [
+   "Belmont",
+   "20",
+   "Other"
+  ],
+  [
+   "Belmont",
+   "20",
+   "Other"
+  ],
+  [
+   "Bensonhurst East",
+   "21",
+   "Other"
+  ],
+  [
+   "Bensonhurst East",
+   "21",
+   "Other"
+  ],
+  [
+   "Bensonhurst East",
+   "21",
+   "Other"
+  ],
+  [
+   "Bensonhurst West",
+   "22",
+   "Other"
+  ],
+  [
+   "Bensonhurst West",
+   "22",
+   "Other"
+  ],
+  [
+   "Bensonhurst West",
+   "22",
+   "Other"
+  ],
+  [
+   "Bloomfield/Emerson Hill",
+   "23",
+   "Other"
+  ],
+  [
+   "Bloomfield/Emerson Hill",
+   "23",
+   "Other"
+  ],
+  [
+   "Bloomfield/Emerson Hill",
+   "23",
+   "Other"
+  ],
+  [
+   "Boerum Hill",
+   "25",
+   "Other"
+  ],
+  [
+   "Boerum Hill",
+   "25",
+   "Other"
+  ],
+  [
+   "Boerum Hill",
+   "25",
+   "Other"
+  ],
+  [
+   "Borough Park",
+   "26",
+   "Other"
+  ],
+  [
+   "Borough Park",
+   "26",
+   "Other"
+  ],
+  [
+   "Borough Park",
+   "26",
+   "Other"
+  ],
+  [
+   "Breezy Point/Fort Tilden/Riis Beach",
+   "27",
+   "Other"
+  ],
+  [
+   "Breezy Point/Fort Tilden/Riis Beach",
+   "27",
+   "Other"
+  ],
+  [
+   "Breezy Point/Fort Tilden/Riis Beach",
+   "27",
+   "Other"
+  ],
+  [
+   "Briarwood/Jamaica Hills",
+   "28",
+   "Other"
+  ],
+  [
+   "Briarwood/Jamaica Hills",
+   "28",
+   "Other"
+  ],
+  [
+   "Briarwood/Jamaica Hills",
+   "28",
+   "Other"
+  ],
+  [
+   "Brighton Beach",
+   "29",
+   "Other"
+  ],
+  [
+   "Brighton Beach",
+   "29",
+   "Other"
+  ],
+  [
+   "Brighton Beach",
+   "29",
+   "Other"
+  ],
+  [
+   "Broad Channel",
+   "30",
+   "Other"
+  ],
+  [
+   "Broad Channel",
+   "30",
+   "Other"
+  ],
+  [
+   "Broad Channel",
+   "30",
+   "Other"
+  ],
+  [
+   "Bronx Park",
+   "31",
+   "Other"
+  ],
+  [
+   "Bronx Park",
+   "31",
+   "Other"
+  ],
+  [
+   "Bronx Park",
+   "31",
+   "Other"
+  ],
+  [
+   "Bronxdale",
+   "32",
+   "Other"
+  ],
+  [
+   "Bronxdale",
+   "32",
+   "Other"
+  ],
+  [
+   "Bronxdale",
+   "32",
+   "Other"
+  ],
+  [
+   "Brooklyn Heights",
+   "33",
+   "Other"
+  ],
+  [
+   "Brooklyn Heights",
+   "33",
+   "Other"
+  ],
+  [
+   "Brooklyn Heights",
+   "33",
+   "Other"
+  ],
+  [
+   "Brooklyn Navy Yard",
+   "34",
+   "Other"
+  ],
+  [
+   "Brooklyn Navy Yard",
+   "34",
+   "Other"
+  ],
+  [
+   "Brooklyn Navy Yard",
+   "34",
+   "Other"
+  ],
+  [
+   "Brownsville",
+   "35",
+   "Other"
+  ],
+  [
+   "Brownsville",
+   "35",
+   "Other"
+  ],
+  [
+   "Brownsville",
+   "35",
+   "Other"
+  ],
+  [
+   "Bushwick North",
+   "36",
+   "Other"
+  ],
+  [
+   "Bushwick North",
+   "36",
+   "Other"
+  ],
+  [
+   "Bushwick North",
+   "36",
+   "Other"
+  ],
+  [
+   "Bushwick South",
+   "37",
+   "Other"
+  ],
+  [
+   "Bushwick South",
+   "37",
+   "Other"
+  ],
+  [
+   "Bushwick South",
+   "37",
+   "Other"
+  ],
+  [
+   "Cambria Heights",
+   "38",
+   "Other"
+  ],
+  [
+   "Cambria Heights",
+   "38",
+   "Other"
+  ],
+  [
+   "Cambria Heights",
+   "38",
+   "Other"
+  ],
+  [
+   "Canarsie",
+   "39",
+   "Other"
+  ],
+  [
+   "Canarsie",
+   "39",
+   "Other"
+  ],
+  [
+   "Canarsie",
+   "39",
+   "Other"
+  ],
+  [
+   "Carroll Gardens",
+   "40",
+   "Other"
+  ],
+  [
+   "Carroll Gardens",
+   "40",
+   "Other"
+  ],
+  [
+   "Carroll Gardens",
+   "40",
+   "Other"
+  ],
+  [
+   "Charleston/Tottenville",
+   "44",
+   "Other"
+  ],
+  [
+   "Charleston/Tottenville",
+   "44",
+   "Other"
+  ],
+  [
+   "Charleston/Tottenville",
+   "44",
+   "Other"
+  ],
+  [
+   "City Island",
+   "46",
+   "Other"
+  ],
+  [
+   "City Island",
+   "46",
+   "Other"
+  ],
+  [
+   "City Island",
+   "46",
+   "Other"
+  ],
+  [
+   "Claremont/Bathgate",
+   "47",
+   "Other"
+  ],
+  [
+   "Claremont/Bathgate",
+   "47",
+   "Other"
+  ],
+  [
+   "Claremont/Bathgate",
+   "47",
+   "Other"
+  ],
+  [
+   "Clinton Hill",
+   "49",
+   "Other"
+  ],
+  [
+   "Clinton Hill",
+   "49",
+   "Other"
+  ],
+  [
+   "Clinton Hill",
+   "49",
+   "Other"
+  ],
+  [
+   "Co-Op City",
+   "51",
+   "Other"
+  ],
+  [
+   "Co-Op City",
+   "51",
+   "Other"
+  ],
+  [
+   "Co-Op City",
+   "51",
+   "Other"
+  ],
+  [
+   "Cobble Hill",
+   "52",
+   "Other"
+  ],
+  [
+   "Cobble Hill",
+   "52",
+   "Other"
+  ],
+  [
+   "Cobble Hill",
+   "52",
+   "Other"
+  ],
+  [
+   "College Point",
+   "53",
+   "Other"
+  ],
+  [
+   "College Point",
+   "53",
+   "Other"
+  ],
+  [
+   "College Point",
+   "53",
+   "Other"
+  ],
+  [
+   "Columbia Street",
+   "54",
+   "Other"
+  ],
+  [
+   "Columbia Street",
+   "54",
+   "Other"
+  ],
+  [
+   "Columbia Street",
+   "54",
+   "Other"
+  ],
+  [
+   "Coney Island",
+   "55",
+   "Other"
+  ],
+  [
+   "Coney Island",
+   "55",
+   "Other"
+  ],
+  [
+   "Coney Island",
+   "55",
+   "Other"
+  ],
+  [
+   "Corona",
+   "56",
+   "Other"
+  ],
+  [
+   "Corona",
+   "56",
+   "Other"
+  ],
+  [
+   "Corona",
+   "56",
+   "Other"
+  ],
+  [
+   "Corona",
+   "56",
+   "Other"
+  ],
+  [
+   "Corona",
+   "56",
+   "Other"
+  ],
+  [
+   "Corona",
+   "56",
+   "Other"
+  ],
+  [
+   "Country Club",
+   "58",
+   "Other"
+  ],
+  [
+   "Country Club",
+   "58",
+   "Other"
+  ],
+  [
+   "Country Club",
+   "58",
+   "Other"
+  ],
+  [
+   "Crotona Park",
+   "59",
+   "Other"
+  ],
+  [
+   "Crotona Park",
+   "59",
+   "Other"
+  ],
+  [
+   "Crotona Park",
+   "59",
+   "Other"
+  ],
+  [
+   "Crotona Park East",
+   "60",
+   "Other"
+  ],
+  [
+   "Crotona Park East",
+   "60",
+   "Other"
+  ],
+  [
+   "Crotona Park East",
+   "60",
+   "Other"
+  ],
+  [
+   "Crown Heights North",
+   "61",
+   "Other"
+  ],
+  [
+   "Crown Heights North",
+   "61",
+   "Other"
+  ],
+  [
+   "Crown Heights North",
+   "61",
+   "Other"
+  ],
+  [
+   "Crown Heights South",
+   "62",
+   "Other"
+  ],
+  [
+   "Crown Heights South",
+   "62",
+   "Other"
+  ],
+  [
+   "Crown Heights South",
+   "62",
+   "Other"
+  ],
+  [
+   "Cypress Hills",
+   "63",
+   "Other"
+  ],
+  [
+   "Cypress Hills",
+   "63",
+   "Other"
+  ],
+  [
+   "Cypress Hills",
+   "63",
+   "Other"
+  ],
+  [
+   "DUMBO/Vinegar Hill",
+   "66",
+   "Other"
+  ],
+  [
+   "DUMBO/Vinegar Hill",
+   "66",
+   "Other"
+  ],
+  [
+   "DUMBO/Vinegar Hill",
+   "66",
+   "Other"
+  ],
+  [
+   "Douglaston",
+   "64",
+   "Other"
+  ],
+  [
+   "Douglaston",
+   "64",
+   "Other"
+  ],
+  [
+   "Douglaston",
+   "64",
+   "Other"
+  ],
+  [
+   "Downtown Brooklyn/MetroTech",
+   "65",
+   "Other"
+  ],
+  [
+   "Downtown Brooklyn/MetroTech",
+   "65",
+   "Other"
+  ],
+  [
+   "Downtown Brooklyn/MetroTech",
+   "65",
+   "Other"
+  ],
+  [
+   "Dyker Heights",
+   "67",
+   "Other"
+  ],
+  [
+   "Dyker Heights",
+   "67",
+   "Other"
+  ],
+  [
+   "Dyker Heights",
+   "67",
+   "Other"
+  ],
+  [
+   "East Concourse/Concourse Village",
+   "69",
+   "Other"
+  ],
+  [
+   "East Concourse/Concourse Village",
+   "69",
+   "Other"
+  ],
+  [
+   "East Concourse/Concourse Village",
+   "69",
+   "Other"
+  ],
+  [
+   "East Elmhurst",
+   "70",
+   "Other"
+  ],
+  [
+   "East Elmhurst",
+   "70",
+   "Other"
+  ],
+  [
+   "East Elmhurst",
+   "70",
+   "Other"
+  ],
+  [
+   "East Flatbush/Farragut",
+   "71",
+   "Other"
+  ],
+  [
+   "East Flatbush/Farragut",
+   "71",
+   "Other"
+  ],
+  [
+   "East Flatbush/Farragut",
+   "71",
+   "Other"
+  ],
+  [
+   "East Flatbush/Remsen Village",
+   "72",
+   "Other"
+  ],
+  [
+   "East Flatbush/Remsen Village",
+   "72",
+   "Other"
+  ],
+  [
+   "East Flatbush/Remsen Village",
+   "72",
+   "Other"
+  ],
+  [
+   "East Flushing",
+   "73",
+   "Other"
+  ],
+  [
+   "East Flushing",
+   "73",
+   "Other"
+  ],
+  [
+   "East Flushing",
+   "73",
+   "Other"
+  ],
+  [
+   "East New York",
+   "76",
+   "Other"
+  ],
+  [
+   "East New York",
+   "76",
+   "Other"
+  ],
+  [
+   "East New York",
+   "76",
+   "Other"
+  ],
+  [
+   "East New York/Pennsylvania Avenue",
+   "77",
+   "Other"
+  ],
+  [
+   "East New York/Pennsylvania Avenue",
+   "77",
+   "Other"
+  ],
+  [
+   "East New York/Pennsylvania Avenue",
+   "77",
+   "Other"
+  ],
+  [
+   "East Tremont",
+   "78",
+   "Other"
+  ],
+  [
+   "East Tremont",
+   "78",
+   "Other"
+  ],
+  [
+   "East Tremont",
+   "78",
+   "Other"
+  ],
+  [
+   "East Williamsburg",
+   "80",
+   "Other"
+  ],
+  [
+   "East Williamsburg",
+   "80",
+   "Other"
+  ],
+  [
+   "East Williamsburg",
+   "80",
+   "Other"
+  ],
+  [
+   "Eastchester",
+   "81",
+   "Other"
+  ],
+  [
+   "Eastchester",
+   "81",
+   "Other"
+  ],
+  [
+   "Eastchester",
+   "81",
+   "Other"
+  ],
+  [
+   "Elmhurst",
+   "82",
+   "Other"
+  ],
+  [
+   "Elmhurst",
+   "82",
+   "Other"
+  ],
+  [
+   "Elmhurst",
+   "82",
+   "Other"
+  ],
+  [
+   "Elmhurst/Maspeth",
+   "83",
+   "Other"
+  ],
+  [
+   "Elmhurst/Maspeth",
+   "83",
+   "Other"
+  ],
+  [
+   "Elmhurst/Maspeth",
+   "83",
+   "Other"
+  ],
+  [
+   "Eltingville/Annadale/Prince's Bay",
+   "84",
+   "Other"
+  ],
+  [
+   "Eltingville/Annadale/Prince's Bay",
+   "84",
+   "Other"
+  ],
+  [
+   "Eltingville/Annadale/Prince's Bay",
+   "84",
+   "Other"
+  ],
+  [
+   "Erasmus",
+   "85",
+   "Other"
+  ],
+  [
+   "Erasmus",
+   "85",
+   "Other"
+  ],
+  [
+   "Erasmus",
+   "85",
+   "Other"
+  ],
+  [
+   "Far Rockaway",
+   "86",
+   "Other"
+  ],
+  [
+   "Far Rockaway",
+   "86",
+   "Other"
+  ],
+  [
+   "Far Rockaway",
+   "86",
+   "Other"
+  ],
+  [
+   "Flatbush/Ditmas Park",
+   "89",
+   "Other"
+  ],
+  [
+   "Flatbush/Ditmas Park",
+   "89",
+   "Other"
+  ],
+  [
+   "Flatbush/Ditmas Park",
+   "89",
+   "Other"
+  ],
+  [
+   "Flatlands",
+   "91",
+   "Other"
+  ],
+  [
+   "Flatlands",
+   "91",
+   "Other"
+  ],
+  [
+   "Flatlands",
+   "91",
+   "Other"
+  ],
+  [
+   "Flushing",
+   "92",
+   "Other"
+  ],
+  [
+   "Flushing",
+   "92",
+   "Other"
+  ],
+  [
+   "Flushing",
+   "92",
+   "Other"
+  ],
+  [
+   "Flushing Meadows-Corona Park",
+   "93",
+   "Other"
+  ],
+  [
+   "Flushing Meadows-Corona Park",
+   "93",
+   "Other"
+  ],
+  [
+   "Flushing Meadows-Corona Park",
+   "93",
+   "Other"
+  ],
+  [
+   "Fordham South",
+   "94",
+   "Other"
+  ],
+  [
+   "Fordham South",
+   "94",
+   "Other"
+  ],
+  [
+   "Fordham South",
+   "94",
+   "Other"
+  ],
+  [
+   "Forest Hills",
+   "95",
+   "Other"
+  ],
+  [
+   "Forest Hills",
+   "95",
+   "Other"
+  ],
+  [
+   "Forest Hills",
+   "95",
+   "Other"
+  ],
+  [
+   "Forest Park/Highland Park",
+   "96",
+   "Other"
+  ],
+  [
+   "Forest Park/Highland Park",
+   "96",
+   "Other"
+  ],
+  [
+   "Forest Park/Highland Park",
+   "96",
+   "Other"
+  ],
+  [
+   "Fort Greene",
+   "97",
+   "Other"
+  ],
+  [
+   "Fort Greene",
+   "97",
+   "Other"
+  ],
+  [
+   "Fort Greene",
+   "97",
+   "Other"
+  ],
+  [
+   "Fresh Meadows",
+   "98",
+   "Other"
+  ],
+  [
+   "Fresh Meadows",
+   "98",
+   "Other"
+  ],
+  [
+   "Fresh Meadows",
+   "98",
+   "Other"
+  ],
+  [
+   "Freshkills Park",
+   "99",
+   "Other"
+  ],
+  [
+   "Freshkills Park",
+   "99",
+   "Other"
+  ],
+  [
+   "Freshkills Park",
+   "99",
+   "Other"
+  ],
+  [
+   "Glen Oaks",
+   "101",
+   "Other"
+  ],
+  [
+   "Glen Oaks",
+   "101",
+   "Other"
+  ],
+  [
+   "Glen Oaks",
+   "101",
+   "Other"
+  ],
+  [
+   "Glendale",
+   "102",
+   "Other"
+  ],
+  [
+   "Glendale",
+   "102",
+   "Other"
+  ],
+  [
+   "Glendale",
+   "102",
+   "Other"
+  ],
+  [
+   "Gowanus",
+   "106",
+   "Other"
+  ],
+  [
+   "Gowanus",
+   "106",
+   "Other"
+  ],
+  [
+   "Gowanus",
+   "106",
+   "Other"
+  ],
+  [
+   "Gravesend",
+   "108",
+   "Other"
+  ],
+  [
+   "Gravesend",
+   "108",
+   "Other"
+  ],
+  [
+   "Gravesend",
+   "108",
+   "Other"
+  ],
+  [
+   "Great Kills",
+   "109",
+   "Other"
+  ],
+  [
+   "Great Kills",
+   "109",
+   "Other"
+  ],
+  [
+   "Great Kills",
+   "109",
+   "Other"
+  ],
+  [
+   "Great Kills Park",
+   "110",
+   "Other"
+  ],
+  [
+   "Great Kills Park",
+   "110",
+   "Other"
+  ],
+  [
+   "Great Kills Park",
+   "110",
+   "Other"
+  ],
+  [
+   "Green-Wood Cemetery",
+   "111",
+   "Other"
+  ],
+  [
+   "Green-Wood Cemetery",
+   "111",
+   "Other"
+  ],
+  [
+   "Green-Wood Cemetery",
+   "111",
+   "Other"
+  ],
+  [
+   "Greenpoint",
+   "112",
+   "Other"
+  ],
+  [
+   "Greenpoint",
+   "112",
+   "Other"
+  ],
+  [
+   "Greenpoint",
+   "112",
+   "Other"
+  ],
+  [
+   "Grymes Hill/Clifton",
+   "115",
+   "Other"
+  ],
+  [
+   "Grymes Hill/Clifton",
+   "115",
+   "Other"
+  ],
+  [
+   "Grymes Hill/Clifton",
+   "115",
+   "Other"
+  ],
+  [
+   "Hammels/Arverne",
+   "117",
+   "Other"
+  ],
+  [
+   "Hammels/Arverne",
+   "117",
+   "Other"
+  ],
+  [
+   "Hammels/Arverne",
+   "117",
+   "Other"
+  ],
+  [
+   "Heartland Village/Todt Hill",
+   "118",
+   "Other"
+  ],
+  [
+   "Heartland Village/Todt Hill",
+   "118",
+   "Other"
+  ],
+  [
+   "Heartland Village/Todt Hill",
+   "118",
+   "Other"
+  ],
+  [
+   "Highbridge",
+   "119",
+   "Other"
+  ],
+  [
+   "Highbridge",
+   "119",
+   "Other"
+  ],
+  [
+   "Highbridge",
+   "119",
+   "Other"
+  ],
+  [
+   "Hillcrest/Pomonok",
+   "121",
+   "Other"
+  ],
+  [
+   "Hillcrest/Pomonok",
+   "121",
+   "Other"
+  ],
+  [
+   "Hillcrest/Pomonok",
+   "121",
+   "Other"
+  ],
+  [
+   "Hollis",
+   "122",
+   "Other"
+  ],
+  [
+   "Hollis",
+   "122",
+   "Other"
+  ],
+  [
+   "Hollis",
+   "122",
+   "Other"
+  ],
+  [
+   "Homecrest",
+   "123",
+   "Other"
+  ],
+  [
+   "Homecrest",
+   "123",
+   "Other"
+  ],
+  [
+   "Homecrest",
+   "123",
+   "Other"
+  ],
+  [
+   "Howard Beach",
+   "124",
+   "Other"
+  ],
+  [
+   "Howard Beach",
+   "124",
+   "Other"
+  ]
+ ],
+ "elapsed_s": 8.12,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 500
+}

@@ -1,0 +1,21 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2025-01-20' OR h.holiday_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY h.holiday_date LIMIT 500",
+ "sql_hash": "sha256:d70f369f267f377e",
+ "recorded_at": "2026-10-22T14:16:42+00:00",
+ "columns": [
+  "holiday_date",
+  "holiday_name",
+  "is_national"
+ ],
+ "rows": [
+  [
+   "2025-01-20",
+   "Martin Luther King, Jr. Day",
+   1
+  ]
+ ],
+ "elapsed_s": 0.331,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 1
+}

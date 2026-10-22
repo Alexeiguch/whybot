@@ -1,0 +1,31 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT to_date(obs_date) AS date, snow_mm FROM whybot.nyc_weather_daily WHERE dayofweek(to_date(obs_date)) = 7 AND obs_date >= DATE '2024-12-01' AND obs_date < DATE '2025-01-01' ORDER BY date LIMIT 500",
+ "sql_hash": "sha256:aaef9b097f363689",
+ "recorded_at": "2026-10-22T14:09:32+00:00",
+ "columns": [
+  "date",
+  "snow_mm"
+ ],
+ "rows": [
+  [
+   "2024-12-07",
+   0
+  ],
+  [
+   "2024-12-14",
+   0
+  ],
+  [
+   "2024-12-21",
+   46
+  ],
+  [
+   "2024-12-28",
+   0
+  ]
+ ],
+ "elapsed_s": 0.642,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}
