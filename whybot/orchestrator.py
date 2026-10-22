@@ -69,8 +69,8 @@ def new_run_id() -> str:
 
 
 def _load_notes() -> dict:
-    p = ROOT / "whybot" / "catalog_notes.json"
-    return {k: v for k, v in json.loads(p.read_text()).items() if not k.startswith("_")} if p.exists() else {}
+    from .notes import load_notes
+    return load_notes()
 
 
 class WhyBot:
@@ -162,7 +162,7 @@ class WhyBot:
         validate_run_id(run_id, allow_recorded=recording)
         self._question, self._cassette, self._run_id = question, None, run_id
         self._recorded_recall = None
-        self._checks_version, self._shadow = CHECKS_VERSION, []
+        self._checks_version, self._shadow, self._notes = CHECKS_VERSION, [], self.notes
         result = None
         t0 = time.time()
         deadline = t0 + self.s.run_timeout_s
@@ -178,6 +178,7 @@ class WhyBot:
             llm = self._make_llm(tr)
             llm.deadline, llm.call_timeout_s = deadline, self.s.llm_timeout_s
             ds = self._make_ds(tr)
+            self._notes = getattr(ds, "table_notes", None) or self.notes
             tr.emit("Executor", "datasource", output_summary=ds.label, data={"kind": ds.kind, "dialect": ds.dialect})
             mem = self._make_meterless(tr, replay=ds.kind != "live")
             result = self._investigate(question, run_id, tr, llm, ds, mem, deadline)
@@ -247,7 +248,7 @@ class WhyBot:
             done = [f"{e.qid} [{e.status}] ({e.hypothesis_id}) {e.purpose[:140]}" for e in evidence.values()]
             required = sorted({f.hypothesis_id for f in report.follow_up_queries}) if (report and it > 1) else []
             try:
-                plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it, required)
+                plan, meta = planner.plan(question, catalog, self._notes, memory_text, carryover, feedback, done, it, required)
             except LLMError as e:
                 if it == 1:
                     raise
@@ -376,7 +377,8 @@ class WhyBot:
         if status == "insufficient_evidence":
             tr.emit("Orchestrator", "escalate", output_summary="insufficient evidence: answer will state what is and is not known", status="escalated")
 
-        final = self._write(question, status, decision, claims, report, evidence, writer, tr, dq_notes or [])
+        final = self._write(question, status, decision, claims, report, evidence, writer, tr, dq_notes or [],
+                            hyp_kinds={k: h.kind for k, h in hypotheses.items()})
         self._remember(mem, tr, run_id, question, status, final, evidence, report)
         if mem and markov_steps:
             rec = self._safe(tr, lambda: mem.record_run(question, markov_steps + ["[TASK_COMPLETE]"]))
@@ -405,7 +407,7 @@ class WhyBot:
         cat = catalog
         for attempt in range(self.s.max_sql_repairs + 1):
             try:
-                draft, meta = sqlagent.write(spec.purpose, spec.tables, cat, self.notes, ds.dialect, ds.dialect_notes,
+                draft, meta = sqlagent.write(spec.purpose, spec.tables, cat, self._notes, ds.dialect, ds.dialect_notes,
                                              memory_text, question, failed)
             except LLMError as e:
                 ev.error = str(e)
@@ -593,7 +595,7 @@ class WhyBot:
                     f"date(s): {items}. Holidays come from Nager.Date only [DQ1 {tag}].")
         return ans.model_copy(update={"caveats": keep})
 
-    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=()) -> FinalAnswer:
+    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=(), hyp_kinds=None) -> FinalAnswer:
         sup_ids = set(decision.supported_cids)
         verdicts = {v.cid: v for v in (report.verdicts if report else [])}
         supported = [{**c.model_dump(), "critic": verdicts[c.cid].reason} for c in claims.claims if c.cid in sup_ids]
@@ -614,9 +616,12 @@ class WhyBot:
 
         def validator(ans: FinalAnswer) -> list[str]:
             ctx = question + "\n" + "\n".join(dq_notes)
-            probs = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, version=self._checks_version)
+            sup_text = [(hyp_kinds or {}).get(c["hypothesis_id"], "other") + ": " + c["statement"]
+                        for c in supported if c["direction"] == "supports"]
+            probs = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, version=self._checks_version,
+                                   supported_statements=sup_text)
             if self._checks_version < CHECKS_VERSION:
-                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes)
+                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, supported_statements=sup_text)
                 self._note_shadow("Writer draft", [p for p in now if p not in probs])
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []

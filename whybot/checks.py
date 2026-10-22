@@ -14,7 +14,9 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #   1: checks as of the recorded samples
 #   2: a % or Nx must match a derived value or a rate column of a citable query; comparisons such as "higher than the
 #      other three Mondays" are checked against the cited rows
-CHECKS_VERSION = 2
+#   3: every cause the headline or answer names (holiday, weather, trip mix, ...) needs a critic-supported claim
+#      about that cause, or the wording must hedge it
+CHECKS_VERSION = 3
 
 
 def _num(v):
@@ -280,8 +282,76 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
     return Decision("escalate", "iteration cap or time budget reached without a supported explanation", supported)
 
 
+# Causes the final text may name. A cause is "named" when it appears in the causal part of a sentence ("driven by the
+# holiday", "rain caused the drop"). Each needs a critic-supported claim that mentions the same cause.
+CAUSES = {
+    "holiday": r"holiday|thanksgiving|christmas|new year|mlk|martin luther king|memorial day|labou?r day|independence day|veterans day|columbus day|presidents'? day|juneteenth",
+    "weather": r"weather|rain\w*|precipitation|snow\w*|storm\w*|wind\w*|cold|temperature\w*|heat|freez\w*|icy|ice",
+    "trip mix": r"trip mix|fare mix|(?:trip )?distance|longer trips|shorter trips|airport|surcharge\w*|tolls?",
+    "zone mix": r"zone\w*|borough\w*|location mix",
+    "day of week": r"day[- ]of[- ]week|weekday effect|weekend effect",
+    "data quality": r"data[- ]quality|missing data|data gap|incomplete data|outage",
+}
+_CAUSE_RE = {k: re.compile(rf"\b(?:{v})\b", re.I) for k, v in CAUSES.items()}
+# trigger after which the cause is named ("driven by X"), and trigger before which it is named ("X drove ...")
+_CAUSE_AFTER = re.compile(r"\b(?:driven by|due to|caused by|because(?: of)?|owing to|attribut(?:able|ed) to|explained by|"
+                          r"(?:a |the )?result of|resulting from|thanks to|on account of|(?:the |a )?drivers? (?:was|were|is|are)|reflect(?:s|ing|ed)?)\b", re.I)
+_CAUSE_BEFORE = re.compile(r"\b(?:drove|drives|caused|causes|led to|leads to|explains?|explained|accounts? for|accounted for|"
+                           r"(?:is|was) (?:the |a )?(?:main |primary |key )?(?:driver|cause))\b", re.I)
+_HEDGE = re.compile(r"\b(?:may|might|could|possibly|perhaps|potentially|unclear|uncertain|untested|unconfirmed|not (?:confirmed|tested|"
+                    r"established|isolated|supported|proven)|cannot be (?:confirmed|isolated|tested|ruled out|assessed)|"
+                    r"not|no|rather than|instead of|ruled out|suggest\w*|consistent with|possible|plausibl\w*)\b", re.I)
+_SENT_SPLIT = re.compile(r"(?<=[.;!?])\s+")
+
+
+def named_causes(text: str) -> list[tuple[str, str]]:
+    """(cause, sentence) for every cause stated as a cause without a hedge. Clause after "driven by"/"due to"/...;
+    clause before "drove"/"caused"/...; a hedge or negation anywhere in that clause, or just before the trigger, lifts it."""
+    out = []
+    for sent in _SENT_SPLIT.split(text or ""):
+        spans = []
+        for m in _CAUSE_AFTER.finditer(sent):
+            end = _CLAUSE_BREAK.search(sent, m.end())
+            spans.append((sent[max(0, m.start() - 40):m.start()], sent[m.end(): end.start() if end else len(sent)]))
+        for m in _CAUSE_BEFORE.finditer(sent):
+            starts = [b.end() for b in _CLAUSE_BREAK.finditer(sent, 0, m.start())]
+            spans.append((sent[max(0, m.start() - 40):m.start()], sent[starts[-1] if starts else 0: m.start()]))
+        for pre, span in spans:
+            if _HEDGE.search(span) or _HEDGE.search(pre.split(",")[-1]):
+                continue
+            for k, rx in _CAUSE_RE.items():
+                if rx.search(span) and (k, sent) not in out:
+                    out.append((k, sent))
+    return out
+
+
+_KIND_CAUSE = {"holiday": "holiday", "weather": "weather", "fare_mix": "trip mix", "zone_mix": "zone mix",
+               "day_of_week": "day of week", "data_quality": "data quality"}
+
+
+def check_causes(text: str, supported_statements: list[str]) -> list[str]:
+    """Every cause named in the headline or answer must be backed by a critic-supported claim that supports a
+    hypothesis of that kind; otherwise the Writer must hedge it ("may have contributed") or drop it.
+    supported_statements are "<hypothesis kind>: <statement>" for the supporting claims the Critic accepted. A claim on
+    the metric itself ("trips fell 45.5% on Thanksgiving Thursday") backs no cause; a claim of kind "other" backs the
+    causes its statement names."""
+    backed = set()
+    for st in supported_statements:
+        kind, _, body = (st or "").partition(": ")
+        if kind in _KIND_CAUSE:
+            backed.add(_KIND_CAUSE[kind])
+        elif kind == "other":
+            backed |= {k for k, rx in _CAUSE_RE.items() if rx.search(body)}
+    problems = []
+    for k, sent in named_causes(text):
+        if k not in backed:
+            problems.append(f"the text names {k} as a cause (\"{sent.strip()[:140]}\") but no critic-supported claim supports a {k} "
+                            f"hypothesis; hedge it (for example 'may have contributed', 'not tested') or drop it")
+    return problems
+
+
 def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "",
-                   dq_notes=(), version: int = CHECKS_VERSION) -> list[str]:
+                   dq_notes=(), version: int = CHECKS_VERSION, supported_statements=None) -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -306,6 +376,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
         for i, c in enumerate(ans.claims):
             problems += [f"claim {i + 1}: {p}" for p in check_comparisons(c.text, evidence, {x.qid for x in c.citations})]
         problems += check_comparisons("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
+    if version >= 3 and supported_statements is not None:
+        problems += check_causes(ans.headline + ".\n" + ans.answer, list(supported_statements))
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
                                  evidence, context)
     prose = "\n".join([ans.headline, ans.answer, ans.recommendation, *(c.text for c in ans.claims)])

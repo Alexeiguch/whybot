@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..notes import load_notes
 from .base import DataSource, DataSourceError, QueryResult, guard_sql, sql_hash
 
 
@@ -24,7 +25,7 @@ class RecordingDataSource(DataSource):
         if not self._catalog_written:
             (self.dir.parent / "catalog.json").write_text(json.dumps(
                 {"source": "zetaris", "recorded_at": _now(), "dialect": self.dialect, "dialect_notes": self.dialect_notes,
-                 "catalog": cat}, indent=1))
+                 "table_notes": load_notes(), "catalog": cat}, indent=1))
             self._catalog_written = True
         return cat
 
