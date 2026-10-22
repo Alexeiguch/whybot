@@ -1,6 +1,6 @@
 {
  "source": "zetaris",
- "recorded_at": "2026-10-22T14:15:36+00:00",
+ "recorded_at": "2026-10-22T18:00:04+00:00",
  "dialect": "Zetaris Lightning SQL (Spark SQL dialect)",
  "dialect_notes": "Spark SQL functions: to_date(ts), date_format(d,'EEEE') for weekday name, dayofweek(d) returns 1=Sunday..7=Saturday, to_date(CAST(x AS STRING),'yyyyMMdd') for yyyymmdd integers, date_add/datediff, CASE WHEN. Reference tables by their full two-part name exactly as listed under TABLES (e.g. whybot.yellow_daily). No semicolons. Prefer aggregated outputs (<200 rows). ZETARIS QUIRKS (verified): (1) never read the same whybot.* view twice in one query (no self-joins, no two CTEs over the same view): it fails with MISSING_ATTRIBUTES; compare target vs baseline with conditional aggregation instead, e.g. MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN trips END) AS target_trips, AVG(CASE WHEN trip_date <> DATE '2024-11-28' THEN trips END) AS baseline_avg_trips, or simply return one row per date. Joining two DIFFERENT views on the date key is fine. (2) Compare dates with DATE 'yyyy-mm-dd' literals, never integers. date_add(d, n) takes 2 arguments. (3) An error like \"mismatched input ... expecting {'ADD', 'ANALYZE', ...}\" or \"expecting 'METADATA'\" means the statement failed to parse or resolve: simplify it, use only listed column names, and avoid short table aliases at the start of the select list.",
  "catalog": [
