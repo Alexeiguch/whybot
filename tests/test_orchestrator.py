@@ -175,3 +175,12 @@ def test_reused_run_id_gets_a_fresh_trace(settings):
     bot().run("why?", run_id="same")
     res = bot().run("why?", run_id="same")
     assert sum(1 for e in events(res, settings) if e["action"] == "start") == 1
+
+
+def test_failed_follow_up_plan_finishes_with_verified_claims(settings):
+    llm = FakeLLM({"planner": [PLAN, "not json"], "sql": [SQL_TRIPS, SQL_SNOW_OK], "analyst": [CLAIMS],
+                   "critic": [critic("retry")],
+                   "writer": [writer_for([("Q1", sql_hash(SQL_TRIPS["sql"] + " LIMIT 500"), "NY_TAXI.yellow_tripdata")])]})
+    res = WhyBot(settings, llm=llm, datasource=FakeSource(routes()), use_meterless=False, echo=False).run("why?")
+    assert res["status"] != "error"
+    assert any(e["action"] == "failed" and e["agent_name"] == "Planner" for e in events(res, settings))

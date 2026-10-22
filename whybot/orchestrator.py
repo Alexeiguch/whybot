@@ -228,7 +228,15 @@ class WhyBot:
             # ---- Plan
             done = [f"{e.qid} [{e.status}] ({e.hypothesis_id}) {e.purpose[:140]}" for e in evidence.values()]
             required = sorted({f.hypothesis_id for f in report.follow_up_queries}) if (report and it > 1) else []
-            plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it, required)
+            try:
+                plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it, required)
+            except LLMError as e:
+                if it == 1:
+                    raise
+                # a failed follow-up plan must not discard verified work: write (or escalate) with what the Critic accepted
+                tr.emit("Planner", "failed", output_summary=f"follow-up plan failed: {str(e)[:250]}; finishing with verified claims",
+                        status="error", target_agent="Writer")
+                break
             for h in plan.hypotheses:
                 hypotheses[h.id] = h  # revisions with the same id replace the earlier statement
             tr.emit("Planner", "plan", input_summary=feedback[:300] or question, target_agent="Executor",
