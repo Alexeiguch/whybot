@@ -1,0 +1,10 @@
+{
+ "source": "zetaris",
+ "sql": "WITH seq_gen AS (SELECT sequence(1,4) AS seq) SELECT s.saturday_date, MAX(CASE WHEN s.saturday_date = DATE '2024-12-21' THEN h.holiday_name END) AS target_holiday_name, MAX(CASE WHEN s.saturday_date = DATE '2024-12-21' THEN h.is_national END) AS target_is_national, COUNT(DISTINCT h.holiday_date) AS holidays_on_target_saturday FROM (SELECT to_date(CAST(concat('2024120', seq) AS STRING), 'yyyyMMdd') AS saturday_date FROM seq_gen LATERAL VIEW explode(seq) exploded AS seq_alias WHERE mod(seq_alias, 7) = 6) s LEFT JOIN whybot.us_holidays h ON h.holiday_date = s.saturday_date GROUP BY s.saturday_date ORDER BY s.saturday_date LIMIT 500",
+ "sql_hash": "sha256:adac3546979634e0",
+ "recorded_at": "2026-10-22T14:09:42.317Z",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[DATATYPE_MISMATCH.DATA_DIFF_TYPES] Cannot resolve \"concat(2024120, seq)\" due to data type mismatch: Input to `concat` should all be the same type, but it's (\"STRING\" or \"ARRAY<INT>\").; line 1 pos 354;\n'WithCTE\n:- CTERelationDef 28, false\n:  +- SubqueryAlias seq_gen\n:     +- Project [sequence(1, 4, None, Some(GMT)) AS seq#79008]\n:        +- OneRowRelation\n+- 'GlobalLimit 500\n   +- 'LocalLimit 500\n      +- 'Sort ['s.saturday_date ASC NULLS FIRST], true\n         +- 'Aggregate [",
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "backfilled_from": "logs/recorded-example-2-snow-saturday.jsonl",
+ "trace_seq": 23
+}

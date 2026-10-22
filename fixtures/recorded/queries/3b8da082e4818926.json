@@ -1,0 +1,21 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2024-11-28' OR h.holiday_date IN (DATE '2024-11-21', DATE '2024-11-14', DATE '2024-11-07') ORDER BY h.holiday_date LIMIT 500",
+ "sql_hash": "sha256:3b8da082e4818926",
+ "recorded_at": "2026-10-22T18:01:41+00:00",
+ "columns": [
+  "holiday_date",
+  "holiday_name",
+  "is_national"
+ ],
+ "rows": [
+  [
+   "2024-11-28",
+   "Thanksgiving Day",
+   true
+  ]
+ ],
+ "elapsed_s": 0.493,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 1
+}

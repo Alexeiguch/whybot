@@ -63,8 +63,10 @@ class NumericCheck:
     corrections: list[str] = field(default_factory=list)
 
 
-def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence]) -> NumericCheck:
-    """Every cited value must appear in the named column of the named, successful query result."""
+def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "") -> NumericCheck:
+    """Every cited value must appear in the named column of the named, successful query result, and benign weather
+    wording must not describe a day the weather evidence shows as wet or snowy. ('No data-quality flags' is checked on
+    the final answer, where the run's data-quality caveat is rendered.)"""
     problems = []
     if not claim.cited_values:
         problems.append("claim cites no numbers")
@@ -95,6 +97,7 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence]) -> NumericC
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
     corrections: list[str] = []
     problems += check_derived_values(claim, corrections)
+    problems += check_weather_wording(claim.statement, evidence, context)
     return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
@@ -260,7 +263,8 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
     return Decision("escalate", "iteration cap or time budget reached without a supported explanation", supported)
 
 
-def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "") -> list[str]:
+def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "",
+                   dq_notes=()) -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -283,6 +287,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                                    evidence, allowed_qids, extra_values)
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
                                  evidence, context)
+    prose = "\n".join([ans.headline, ans.answer, ans.recommendation, *(c.text for c in ans.claims)])
+    problems += check_consistency(prose + "\n" + "\n".join(ans.caveats), evidence, context, dq_notes, ans.caveats)
     return problems
 
 
@@ -345,6 +351,120 @@ def check_text_dates(text: str, evidence: dict[str, Evidence], context: str = ""
                     known |= month_days(str(v))
     return [f"the date {m:02d}-{d:02d} in the answer does not appear in any query result or note"
             for m, d in sorted(month_days(text) - known)]
+
+
+# ---- Consistency checks: wording that the evidence contradicts ------------------------------------------------------
+# Weather words that claim benign conditions. 'clear', 'fine', 'good' etc. only count next to a weather noun, so
+# "the evidence is clear" or "a mild drop" are not weather claims.
+_BENIGN = r"mild|dry|clear|calm|fair|fine|pleasant|sunny|benign|good|favou?rable|rain-free|precipitation-free|unremarkable"
+_BENIGN_DAY = r"mild|dry|sunny|clear|calm|pleasant|rain-free"
+_WX_PATTERNS = [
+    re.compile(rf"\b(?P<adj>{_BENIGN})(?:\s+(?:and|,)\s*(?:{_BENIGN}))?\s+(?:\w+\s+)?(?:weather|skies|sky)\b", re.I),
+    re.compile(rf"\b(?P<adj>{_BENIGN_DAY})(?:\s+(?:and|,)\s*(?:{_BENIGN}))?\s+(?:\w+\s+)?(?:day|conditions)\b", re.I),
+    re.compile(rf"\b(?:weather(?:\s+conditions)?|skies|sky)\b(?:\s+[\w,()\-:/]+){{0,5}}?\s+(?:was|were|remained|stayed|being|is|are|looked)\s+"
+               rf"(?:\w+\s+)?(?P<adj>{_BENIGN})\b", re.I),
+    re.compile(r"\b(?P<adj>no|zero|without(?:\s+any)?)\s+(?:significant\s+|notable\s+|measurable\s+|meaningful\s+)?"
+               r"(?P<what>rain|rainfall|precipitation|snow|snowfall)\b", re.I),
+]
+_NEG = re.compile(r"\b(not|n't|never|neither|nor|hardly|far from|anything but)\W+(?:\w+\W+){0,2}$", re.I)
+_COMPARISON_SET = re.compile(r"\b\w+s\s+(?:with|that\s+had|having)\s*$|\b(?:other|comparison|baseline|control|reference)\b[^.;]*$", re.I)
+PRECIP_MM_THRESHOLD = 5.0   # a day with >= ~5 mm of rain is not 'mild', 'dry' or 'clear'
+TRACE_MM = 1.0              # 'no rain' tolerates a trace below 1 mm
+
+
+def _weather_rows(evidence: dict[str, Evidence]) -> list[dict]:
+    """(month, day) -> precip_mm / snow_mm for every successful query that returned weather columns."""
+    out = []
+    for ev in evidence.values():
+        if not ev or ev.status != "ok":
+            continue
+        cols = [c.lower() for c in ev.columns]
+        prcp = [i for i, c in enumerate(cols) if re.search(r"prcp|precip|rain", c)]
+        snow = [i for i, c in enumerate(cols) if re.search(r"snow", c) and not re.search(r"snwd|depth", c)]
+        if not prcp and not snow:
+            continue
+        for r in ev.rows:
+            days = set()
+            for v in r:
+                if isinstance(v, str) and re.match(r"^\s*20\d\d-\d\d-\d\d", v):
+                    days |= month_days(v[:10])
+            if not days:
+                continue
+            def scale(i):  # inch columns are converted to mm
+                return 25.4 if re.search(r"(_in|inch)", cols[i]) else 1.0
+            p = [n * scale(i) for i in prcp if (n := _num(r[i])) is not None]
+            sn = [n * scale(i) for i in snow if (n := _num(r[i])) is not None]
+            out.append({"days": days, "prcp": max(p) if p else None, "snow": max(sn) if sn else None,
+                        "qid": ev.qid, "table": ev.primary_table})
+    return out
+
+
+def _sentences(text: str) -> list[str]:
+    return [s for s in re.split(r"(?<=[.!?;])\s+|\n+", text) if s.strip()]
+
+
+def check_weather_wording(text: str, evidence: dict[str, Evidence], context: str = "") -> list[str]:
+    """A benign weather word (mild, dry, clear, no rain, ...) must not describe a day whose recorded weather contradicts
+    it: precipitation >= PRECIP_MM_THRESHOLD or any snowfall. The day is the date in the same sentence, else the dates
+    of the question. Negated wording ('was not mild') is allowed."""
+    rows = _weather_rows(evidence)
+    if not rows:
+        return []
+    default_days = month_days(context)
+    problems = []
+    for sent in _sentences(text):
+        for pat in _WX_PATTERNS:
+            for m in pat.finditer(sent):
+                if m.groupdict().get("what") and _COMPARISON_SET.search(sent[:m.start()]):
+                    continue  # "other Saturdays with no snow" describes the comparison days, not the day in question
+                if _NEG.search(sent[:m.start()]) or re.search(r"\b(not|never|hardly)\b|n't", m.group(0), re.I):
+                    continue
+                adj = m.group("adj").lower()
+                what = (m.groupdict().get("what") or "").lower()
+                days = month_days(sent) or default_days
+                for r in rows:
+                    hit = r["days"] & days
+                    if not hit:
+                        continue
+                    day = "-".join(f"{x:02d}" for x in sorted(hit)[0])
+                    wet = r["prcp"] is not None and r["prcp"] >= PRECIP_MM_THRESHOLD
+                    snowy = r["snow"] is not None and r["snow"] > 0
+                    if what in ("rain", "rainfall", "precipitation"):
+                        bad = r["prcp"] is not None and r["prcp"] >= TRACE_MM
+                    elif what in ("snow", "snowfall"):
+                        bad = snowy
+                    else:
+                        bad = wet or snowy
+                    if bad:
+                        rec = ", ".join(x for x in (f"{r['prcp']:g} mm precipitation" if r["prcp"] is not None else "",
+                                                    f"{r['snow']:g} mm snow" if r["snow"] is not None and r["snow"] > 0 else "") if x)
+                        problems.append(f"'{m.group(0).strip()}' contradicts the recorded weather for {day} ({rec}, "
+                                        f"{r['qid']} {r['table']}): describe the weather with the recorded values or drop the word")
+                        break
+    return list(dict.fromkeys(problems))
+
+
+_NO_DQ = re.compile(
+    r"\b(?:no|zero|without(?:\s+any)?|free\s+of(?:\s+any)?|absence\s+of)\s+(?:known\s+|other\s+|apparent\s+|obvious\s+)?"
+    r"(?:data[- ]?quality|dq|quality|data)\s+(?:flags?|issues?|problems?|concerns?|caveats?|anomal\w+|errors?|warnings?)\b"
+    r"|\b(?:data[- ]?quality|dq)\s+(?:is|was|looks|appears)\s+(?:\w+\s+)?(?:clean|fine|ok|good|unflagged)\b"
+    r"|\bno\s+(?:flags?|issues?)\s+(?:on|with|in|for)\s+(?:the\s+)?data(?:[- ]quality)?\b", re.I)
+_DQ_CAVEAT = re.compile(r"data[- ]?quality|d_holiday|date_dim|\bDQ\d", re.I)
+
+
+def check_dq_consistency(text: str, dq_notes=(), caveats=()) -> list[str]:
+    """'No data-quality flags/issues' cannot be claimed while the run raised data-quality notes (e.g. the TPCDS
+    d_holiday vs Nager.Date check) or the answer itself carries a data-quality caveat."""
+    flagged = list(dq_notes) + [c for c in caveats if _DQ_CAVEAT.search(c) and not _NO_DQ.search(c)]
+    if not flagged:
+        return []
+    return [f"'{m.group(0).strip()}' contradicts the data-quality findings of this run ({len(flagged)} flagged, e.g. "
+            f"{flagged[0][:140]}); say what was checked and keep the data-quality caveat instead"
+            for m in _NO_DQ.finditer(text)]
+
+
+def check_consistency(text: str, evidence: dict[str, Evidence], context: str = "", dq_notes=(), caveats=()) -> list[str]:
+    return check_weather_wording(text, evidence, context) + check_dq_consistency(text, dq_notes, caveats)
 
 
 def drop_uncited(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str]) -> FinalAnswer:
