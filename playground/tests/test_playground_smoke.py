@@ -173,3 +173,24 @@ def test_replay_end_to_end_through_the_api(monkeypatch):
     lines = Path(trace).read_text().splitlines()
     assert lines and json.loads(lines[-1])["action"] == "finish"
     assert "nvapi-" not in Path(trace).read_text()
+
+
+def test_rejected_weak_verdict_shows_as_reject_and_timeline_shows_seq():
+    v = core.RunView(mode="replay", question=EX1, run_id="pg-test")
+    v.add({"agent_name": "Critic", "action": "verdict", "status": "rejected", "iteration": 1, "seq": 77,
+           "output_summary": "c2 weak (0.35): average \u2014 no material reduction", "data": {"verdict": "weak"}})
+    assert "REJECT · weak" in v.critic() and "WEAK" not in v.critic()
+    assert "#77" in v.timeline()
+    assert "\u2014" not in v.critic() + v.timeline()
+
+
+def test_clicking_a_claim_reveals_its_cited_sql():
+    v = core.RunView(mode="replay", question=EX1, run_id="pg-test")
+    v.result = {"status": "answered", "iterations": 1, "execution_time_seconds": 1,
+                "output": {"headline": "H", "answer": "A", "recommendation": "R", "confidence": 0.9,
+                           "claims": [{"text": "Trips fell <45%>", "citations": [{"qid": "Q1", "sql_hash": "sha256:ab", "table": "whybot.yellow_daily"}]}]},
+                "evidence": [{"qid": "Q1", "sql_hash": "sha256:ab", "sql": "SELECT trips FROM whybot.yellow_daily WHERE x < 3", "row_count": 4}]}
+    md = v.answer()
+    assert "<details class='claim'>" in md and "<summary>" in md
+    assert "SELECT trips FROM whybot.yellow_daily WHERE x &lt; 3" in md
+    assert "Trips fell &lt;45%&gt;" in md

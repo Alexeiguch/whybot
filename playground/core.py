@@ -9,6 +9,7 @@ Both paths emit the same trace events (docs/api.md), so one renderer serves both
 from __future__ import annotations
 
 import html
+import re
 import json
 import os
 import queue
@@ -285,14 +286,13 @@ class RunView:
                    "fallback": "⚠ FALLBACK"}.get(st, "")
             pcls = STATUS_CLASS.get(st, "")
             if act == "verdict":
-                v = (e.get("data") or {}).get("verdict", "")
-                tag, pcls = VERDICT_TAG.get(v, ("✕ REJECT", "bad"))
+                tag, pcls = _verdict_tag(e)
                 cls = {"ok": "", "warn": "warn", "bad": "bad"}[pcls]
             if act == "branch" and st == "retry":
                 tag = "↻ RETRY → Planner"
             pill = f"<span class='pill {pcls}'>{_e(tag)}</span>" if tag else ""
             tgt = f" → {_e(e['target_agent'])}" if e.get("target_agent") else ""
-            rows.append(f"<tr class='{cls}'><td class='t'>{e.get('elapsed_s', '')}s<br>it{e.get('iteration', 0)}</td>"
+            rows.append(f"<tr class='{cls}'><td class='t'><b>#{_e(e.get('seq', ''))}</b><br>{e.get('elapsed_s', '')}s<br>it{e.get('iteration', 0)}</td>"
                         f"<td><span class='ag ag-{_e(e.get('agent_name', ''))}'>{_e(e.get('agent_name', ''))}</span></td>"
                         f"<td><div class='act'>{_e(act)}{tgt} {pill}</div><div class='sum'>{_e(str(e.get('output_summary', ''))[:320])}</div></td></tr>")
         if not rows:
@@ -365,8 +365,7 @@ class RunView:
                 lab = "✓ PASS" if st == "success" else "✕ REJECT"
                 out.append(f"<div class='cv {cls}'><span class='pill {cls}'>{lab}</span> number check · {_e(e.get('output_summary', ''))}</div>")
             elif act == "verdict":
-                v = d.get("verdict", "")
-                lab, cls = VERDICT_TAG.get(v, ("✕ REJECT", "bad"))
+                lab, cls = _verdict_tag(e)
                 out.append(f"<div class='cv {cls}'><span class='pill {cls}'>{lab}</span> it{e.get('iteration')} · {_e(e.get('output_summary', ''))}</div>")
             elif act == "data_quality_check":
                 out.append(f"<div class='cv warn'><span class='pill warn'>⚠ DATA QUALITY</span> {_e(e.get('output_summary', ''))}</div>")
@@ -411,9 +410,7 @@ class RunView:
                  f"`{res.get('status')}` · confidence {o.get('confidence')} · {res.get('iterations')} iteration(s) · "
                  f"{res.get('execution_time_seconds')} s · **{label}** · data: {(res.get('data_source') or {}).get('label', '')}", "",
                  o.get("answer", ""), "", f"**Recommendation:** {o.get('recommendation', '')}", "", "**Claims and their evidence**"]
-        for c in o.get("claims") or []:
-            cites = " ".join(f"`[{x.get('qid')} · {str(x.get('sql_hash', ''))[:23]} · {x.get('table')}]`" for x in c.get("citations") or [])
-            lines.append(f"- {c.get('text', '')} {cites}")
+        lines.append("<div class='claims'>" + "".join(self._claim_html(i, c, res) for i, c in enumerate(o.get("claims") or [], 1)) + "</div>")
         rej = [h for h in res.get("hypotheses") or [] if h.get("status") == "rejected"]
         if rej:
             lines += ["", "**Rejected hypotheses**"] + [f"- **{h.get('id')}** {h.get('statement', '')} _{h.get('status_reason', '')}_" for h in rej]
@@ -421,7 +418,21 @@ class RunView:
             lines += ["", "**Caveats**"] + [f"- {c}" for c in o["caveats"]]
         if res.get("data_quality_notes"):
             lines += ["", "**Data-quality notes** (not evidence)"] + [f"- {n}" for n in res["data_quality_notes"]]
-        return "\n".join(lines)
+        return _nd("\n".join(lines))
+
+    @staticmethod
+    def _claim_html(i: int, c: dict, res: dict) -> str:
+        """One claim as a click-to-expand card: the summary is the claim and its citations, the body is the cited SQL."""
+        by_hash = {ev.get("sql_hash"): ev for ev in res.get("evidence") or []}
+        cites = " ".join(f"<code>[{_e(x.get('qid'))} · {_e(str(x.get('sql_hash', ''))[:23])} · {_e(x.get('table'))}]</code>"
+                         for x in c.get("citations") or [])
+        body = []
+        for x in c.get("citations") or []:
+            ev = by_hash.get(x.get("sql_hash")) or {}
+            body.append(f"<div class='small'>{_e(x.get('qid'))} · {_e(ev.get('row_count', '?'))} rows · {_e(ev.get('source_label', ''))}</div>"
+                        f"<pre>{_e(ev.get('sql') or 'SQL not in this result')}</pre>")
+        return (f"<details class='claim'><summary><b>{i}.</b> {_e(c.get('text', ''))} {cites}"
+                f"<span class='show-sql'>show SQL</span></summary>{''.join(body)}</details>")
 
     def write_trace(self) -> str | None:
         if not self.events:
@@ -434,11 +445,26 @@ class RunView:
         return str(p)
 
 
+def _nd(x: str) -> str:
+    """Model text sometimes contains em dashes; the UI shows a comma instead."""
+    return re.sub(r"\s*\u2014\s*", ", ", x)
+
+
 def _e(x) -> str:
-    return html.escape(str(x if x is not None else ""))
+    return html.escape(_nd(str(x if x is not None else "")))
 
 
 VERDICT_TAG = {"supported": ("✓ ACCEPT", "ok"), "weak": ("◐ WEAK", "warn")}
+
+
+def _verdict_tag(e: dict) -> tuple[str, str]:
+    """The orchestrator's status decides REJECT; a 'weak' claim it rejected (so the loop retries) shows as REJECT."""
+    v = (e.get("data") or {}).get("verdict", "")
+    if e.get("status") == "rejected":
+        return ("✕ REJECT · " + v if v and v != "rejected" else "✕ REJECT"), "bad"
+    return VERDICT_TAG.get(v, ("✕ REJECT", "bad"))
+
+
 HYP_ICON = {"supported": "✓ ", "rejected": "✕ ", "inconclusive": "◐ ", "untested": "○ "}
 Q_ICON = {"ok": "✓ ", "error": "✕ ", "rejected": "✕ ", "failed": "✕ ", "running": "… "}
 

@@ -168,6 +168,13 @@ def css() -> str:
 #answer-card strong{{color:{P['text']}}}
 #answer-card code{{font-family:var(--font-mono);font-size:12.5px;color:{P['accent']};background:{P['code']};padding:1px 6px;border-radius:4px}}
 #answer-card em{{color:{P['text_muted']}}}
+#answer-card details.claim{{border:1px solid {P['border']};border-radius:8px;margin:6px 0;background:{P['panel']}}}
+#answer-card details.claim summary{{cursor:pointer;padding:8px 12px;font-size:15px;line-height:1.55;color:{P['text']};list-style-position:outside}}
+#answer-card details.claim summary:focus-visible{{outline:2px solid {P['accent']};outline-offset:2px}}
+#answer-card details.claim .show-sql{{margin-left:8px;font-size:12px;font-weight:700;color:{P['on_accent']};background:{P['accent']};padding:1px 7px;border-radius:999px;white-space:nowrap}}
+#answer-card details.claim[open] .show-sql{{display:none}}
+#answer-card details.claim > div,#answer-card details.claim pre{{margin:0 12px 8px}}
+#answer-card details.claim pre{{white-space:pre-wrap;font-family:var(--font-mono);font-size:12.5px;line-height:1.5;background:{P['code']};color:{P['text']};padding:8px 10px;border-radius:8px;border:1px solid {P['border']}}}
 #fixture-status p{{font-size:14px;color:{P['text_muted']}}}
 #pg-footnote p{{font-size:13px;color:{P['text_subtle']}}}
 #pg-footnote code{{color:{P['accent']};background:{P['code']}}}
