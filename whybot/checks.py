@@ -211,7 +211,7 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
     return Decision("escalate", "iteration cap or time budget reached without a supported explanation", supported)
 
 
-def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
+def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "") -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -232,6 +232,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
     problems += check_text_numbers(f"{ans.headline}\n{ans.answer}\n" + "\n".join(c.text for c in ans.claims),
                                    evidence, allowed_qids, extra_values)
+    problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
+                                 evidence, context)
     return problems
 
 
@@ -270,6 +272,36 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
         if not any(tol(c) for c in cands):
             problems.append(f"the number '{m.group(0).strip()}' in the answer is not backed by cited evidence")
     return problems
+
+
+_MON = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
+_DM_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|"
+                    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b|"
+                    r"\b20\d\d-(\d\d)-(\d\d)\b", re.I)
+
+
+def month_days(text: str) -> set[tuple[int, int]]:
+    out = set()
+    for m in _DM_RE.finditer(text):
+        if m.group(1):
+            out.add((_MON[m.group(2).lower()[:3]], int(m.group(1))))
+        elif m.group(3):
+            out.add((_MON[m.group(3).lower()[:3]], int(m.group(4))))
+        else:
+            out.add((int(m.group(5)), int(m.group(6))))
+    return out
+
+
+def check_text_dates(text: str, evidence: dict[str, Evidence], context: str = "") -> list[str]:
+    """Every calendar date written in the answer must appear in a query result, a data-quality note or the question."""
+    known = month_days(context)
+    for ev in evidence.values():
+        if ev.status == "ok":
+            for r in ev.rows:
+                for v in r:
+                    known |= month_days(str(v))
+    return [f"the date {m:02d}-{d:02d} in the answer does not appear in any query result or note"
+            for m, d in sorted(month_days(text) - known)]
 
 
 def drop_uncited(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str]) -> FinalAnswer:

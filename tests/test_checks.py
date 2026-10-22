@@ -198,3 +198,12 @@ def test_small_llm_arithmetic_slips_are_recomputed_not_trusted():
     fixes = []
     assert check_derived_values(c, fixes) == []
     assert fixes and "45.5" in c.statement and "45.9" not in c.statement
+
+
+def test_dates_in_final_text_must_appear_in_results_or_notes():
+    from whybot.checks import check_text_dates
+    e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
+                 rows=[["2024-11-21", 153149], ["2024-11-28", 77244]], row_count=2, tables=["t"])
+    note = "2024-11-11: d_holiday=N but Nager.Date says Veterans Day"
+    assert check_text_dates("Thanksgiving, 28 Nov; rain on Nov 21st; Veterans Day (11 Nov) mislabelled", {"Q1": e}, note) == []
+    assert check_text_dates("same issue for 14 Nov (Veterans Day)", {"Q1": e}, note)
