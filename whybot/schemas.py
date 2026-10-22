@@ -46,7 +46,7 @@ class CitedValue(BaseModel):
 
 class DerivedValue(BaseModel):
     name: str = Field(description="e.g. pct_change_vs_baseline")
-    value: float
+    value: float | None = Field(default=None, description="optional; WhyBot recomputes it from the formula")
     formula: str = Field(description="Arithmetic over cited values v1..vn (1-based order of cited_values), + - * / ( ), avg(), sum(), min(), max(), abs(). e.g. (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100")
 
 

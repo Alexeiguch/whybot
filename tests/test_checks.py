@@ -207,3 +207,13 @@ def test_dates_in_final_text_must_appear_in_results_or_notes():
     note = "2024-11-11: d_holiday=N but Nager.Date says Veterans Day"
     assert check_text_dates("Thanksgiving, 28 Nov; rain on Nov 21st; Veterans Day (11 Nov) mislabelled", {"Q1": e}, note) == []
     assert check_text_dates("same issue for 14 Nov (Veterans Day)", {"Q1": e}, note)
+
+
+def test_placeholders_are_filled_by_the_evaluator():
+    from whybot.checks import check_derived_values
+    from whybot.schemas import DerivedValue
+    c = _claim_txt("Trips fell {pct}% vs the baseline average", VALS)
+    c.derived = [DerivedValue(name="pct", formula=BASE)]
+    assert check_derived_values(c) == [] and c.statement == "Trips fell 45.5% vs the baseline average"
+    c2 = _claim_txt("Trips fell {nope}%", VALS)
+    assert check_derived_values(c2)

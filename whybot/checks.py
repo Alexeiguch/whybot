@@ -156,6 +156,15 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
         except ValueError as e:
             problems.append(f"derived {d.name}: {e}")
             continue
+        ph = "{" + d.name + "}"
+        if d.value is None or ph in claim.statement:
+            # placeholder style: the evaluator, not the model, supplies the number
+            fixed = round(actual, 2)
+            txt = f"{abs(fixed):,.0f}" if abs(fixed) >= 1000 else (f"{abs(fixed):.1f}" if abs(fixed) >= 10 else f"{abs(fixed):.2f}")
+            claim.statement = claim.statement.replace(ph, txt)
+            d.value = fixed
+            ok_values.append(abs(actual))
+            continue
         if _close(d.value, actual):
             ok_values.append(abs(actual))
         elif _within_rounding_band(d.value, actual):
@@ -167,6 +176,8 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
             ok_values.append(abs(actual))
         else:
             problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
+    for left in re.findall(r"\{[A-Za-z_]\w*\}", claim.statement):
+        problems.append(f"placeholder {left} has no derived value with that name")
     for p in [float(m) for m in _PCT.findall(claim.statement)]:
         if not any(_close(p, v) for v in ok_values):
             problems.append(f"{p:g}% in the statement is not recomputable from cited cells (declare it in derived with a formula)")

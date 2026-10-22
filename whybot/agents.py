@@ -30,6 +30,7 @@ class Planner:
         "Turn the analyst's bounded question into testable, falsifiable hypotheses and a minimal SQL plan. "
         "Always include H0 (kind=metric) that quantifies the change: the target window vs a like-for-like baseline (same weekday where relevant). "
         "On the first iteration propose at least 4 competing hypotheses from: weather, holiday, day_of_week, fare_mix, zone_mix, data_quality. "
+        "The data covers 2024-04-01..2025-02-28 only (weather to 2025-02-05): never plan a query outside that window, so there are no earlier years to compare. "
         "Each query purpose must be concrete (columns, grouping, filters, exact date windows) and use ONLY tables listed in the catalog. "
         "Keep queries few (one per hypothesis is ideal, max 7 total) and aggregated. Use memory lessons when relevant. "
         "On later iterations, only add queries that address the critic feedback; do not repeat queries that already succeeded."
@@ -124,9 +125,13 @@ class Analyst:
         "(differences or % changes you can show from cited values). Do not speculate beyond the numbers; draft refuting claims too. "
         "At most 8 short claims. Treat suspicious results (identical values on every row) as unreliable. "
         "Every percentage, ratio or average written in a statement must be declared in derived[] with a formula over the claim's "
-        "cited values v1..vn (cite EVERY operand: the target and each baseline value), e.g. "
-        "{name: pct_change_vs_baseline, value: -45.45, formula: (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100}. The formula is re-evaluated; "
-        "a mismatch rejects the claim."
+        "cited values v1..vn (1-based, in the order of cited_values; cite EVERY operand: the target cell FIRST, then each baseline cell), e.g. "
+        "{name: pct_change_vs_baseline, formula: (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100}. Write the number in the statement as a "
+        "placeholder {pct_change_vs_baseline}: WhyBot evaluates the formula and fills it in, so never do the arithmetic yourself. "
+        "Rules: cited_values are raw cells copied from a returned row (never an average or total you computed: put those in derived); "
+        "one metric per claim (a second metric needs its own claim and its own v-numbering); to claim something is ABSENT cite a "
+        "COUNT cell equal to 0 or say it in words without a row_hint, never a row_hint for a row that is not in the result; "
+        "if a query returned no rows or NULLs, do not draft a claim from it. The data only covers 2024-04-01..2025-02-28."
     )
 
     def __init__(self, llm: BaseLLM):
@@ -137,7 +142,12 @@ class Analyst:
         user = (f"QUESTION: {question}\n\nHYPOTHESES:\n{plan_text}\n\nEVIDENCE:\n" +
                 "\n\n".join(e.for_prompt() for e in evidence) + f"\n\nCRITIC FEEDBACK ON EARLIER DRAFT:\n{feedback or '(none)'}")
 
+        ev_map = {e.qid: e for e in evidence}
+        rounds = {"n": 0}
+
         def validate(cs: ClaimSet) -> list[str]:
+            from .checks import check_claim_numbers
+            rounds["n"] += 1
             errs = []
             if not cs.claims:
                 errs.append("draft at least one claim")
@@ -145,6 +155,11 @@ class Analyst:
                 for cv in c.cited_values:
                     if cv.qid not in ev_ids:
                         errs.append(f"{c.cid} cites unknown {cv.qid}")
+            if errs or rounds["n"] >= 2:
+                return errs  # one self-repair round; after that the Critic's own number check decides
+            for c in cs.claims:
+                ch = check_claim_numbers(c.model_copy(deep=True), ev_map)
+                errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
         return self.llm.complete_json("analyst", self.SYSTEM, user, ClaimSet, validator=validate, max_tokens=5000)
