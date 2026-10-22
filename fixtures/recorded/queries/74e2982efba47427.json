@@ -1,0 +1,41 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, date_format(trip_date,'EEEE') AS weekday_name, trips, CASE WHEN trip_date = DATE '2024-11-28' THEN 1 ELSE 0 END AS is_target_date FROM whybot.yellow_daily WHERE date_format(trip_date,'yyyy-MM') = '2024-11' AND date_format(trip_date,'EEEE') = 'Thursday' ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:74e2982efba47427",
+ "recorded_at": "2026-10-22T18:01:54+00:00",
+ "columns": [
+  "trip_date",
+  "weekday_name",
+  "trips",
+  "is_target_date"
+ ],
+ "rows": [
+  [
+   "2024-11-07",
+   "Thursday",
+   130018,
+   0
+  ],
+  [
+   "2024-11-14",
+   "Thursday",
+   141642,
+   0
+  ],
+  [
+   "2024-11-21",
+   "Thursday",
+   153149,
+   0
+  ],
+  [
+   "2024-11-28",
+   "Thursday",
+   77244,
+   1
+  ]
+ ],
+ "elapsed_s": 8.168,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

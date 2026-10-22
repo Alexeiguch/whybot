@@ -1,0 +1,10 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT d.date_sk, d.d_date, d.d_day_name, d.d_weekend, d.d_holiday, y.trips FROM tpcds_db.date_dim d JOIN whybot.yellow_daily y ON y.d_date_sk = d.d_date_sk WHERE d.d_year = 2024 AND d.d_moy = 12 AND d.d_dow = 7 ORDER BY d.d_date_sk LIMIT 200",
+ "sql_hash": "sha256:661b3c8dbf515dac",
+ "recorded_at": "2026-10-22T14:10:35.377Z",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `y`.`d_date_sk` cannot be resolved. Did you mean one of the following? [`d`.`d_date_sk`, `d`.`d_date`, `d`.`d_date_id`, `d`.`d_dom`, `d`.`d_dow`].; line 1 pos 131;\n'GlobalLimit 200\n+- 'LocalLimit 200\n   +- 'Sort ['d.d_date_sk ASC NULLS FIRST], true\n      +- 'Project ['d.date_sk, 'd.d_date, 'd.d_day_name, 'd.d_weekend, 'd.d_holiday, 'y.trips]\n         +- 'Filter ((('d.d_year = 2024) AND ('d.d_moy = 12",
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "backfilled_from": "logs/recorded-example-2-snow-saturday.jsonl",
+ "trace_seq": 41
+}

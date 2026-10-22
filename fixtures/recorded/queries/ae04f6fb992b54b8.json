@@ -1,0 +1,10 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT trip_date, trips, avg_trip_distance, CASE WHEN trip_date = DATE '2025-01-20' THEN avg_total_amount END AS target_amount, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN avg_total_amount END) AS baseline_avg_amount FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY trip_date ORDER BY trip_date LIMIT 500",
+ "sql_hash": "sha256:ae04f6fb992b54b8",
+ "recorded_at": "2026-10-22T14:16:55.500Z",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The non-aggregating expression \"trips\" is based on columns which are not participating in the GROUP BY clause.\nAdd the columns or the expression to the GROUP BY, aggregate the expression, or use \"any_value(trips)\" if you do not care which of the values within a group is returned.;\nGlobalLimit 500\n+- LocalLimit 500\n   +- Sort [trip_date#82787 ASC NULLS FIRST], true\n      +- Aggregate [trip_date#82787], [trip_date#82787, trips#82788L, avg_trip_distance#827",
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "backfilled_from": "logs/recorded-example-3-mlk-fare.jsonl",
+ "trace_seq": 23
+}

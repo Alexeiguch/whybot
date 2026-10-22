@@ -41,6 +41,8 @@ def test_sample_mode_replay_matches_live_run_with_real_writer_answer(path, tmp_p
     assert mode["data"]["mode"] == "replay" and mode["data"]["live_run_id"] == "recorded-" + ex["run_id"]
     calls = [e for e in events if e["action"] == "llm_call"]
     assert calls and all(c["data"].get("replayed") and c["data"].get("recorded_at") for c in calls)
+    mismatched = [(c["agent_name"], c["seq"]) for c in calls if c["data"].get("prompt_match") is not True]
+    assert not mismatched, f"replayed prompts differ from the live ones: {mismatched}"
 
 
 def test_at_least_one_recorded_run_has_a_critic_reject_then_retry():

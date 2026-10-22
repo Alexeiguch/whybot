@@ -3,6 +3,8 @@
  "live_run_id": "recorded-example-2-snow-saturday",
  "trace": "logs/recorded-example-2-snow-saturday.jsonl",
  "recorded_at": "2026-10-22T14:15:26+00:00",
+ "hmem_recall": [],
+ "hmem_recall_source": "logs/recorded-example-2-snow-saturday.jsonl (hmem.recall event, backfilled)",
  "calls": [
   {
    "role": "planner",

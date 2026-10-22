@@ -1,0 +1,10 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT to_date(d) AS trip_date, COUNT(*) AS trips FROM whybot.yellow_daily WHERE to_date(d) BETWEEN DATE '2024-12-01' AND DATE '2024-12-31' GROUP BY to_date(d) ORDER BY to_date(d) LIMIT 50",
+ "sql_hash": "sha256:d66ea388071856ed",
+ "recorded_at": "2026-10-22T14:11:14.251Z",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `d` cannot be resolved. Did you mean one of the following? [`trips`, `trip_date`, `avg_total_amount`, `avg_trip_distance`].; line 1 pos 89;\n'GlobalLimit 50\n+- 'LocalLimit 50\n   +- 'Sort ['to_date('d) ASC NULLS FIRST], true\n      +- 'Aggregate ['to_date('d)], ['to_date('d) AS trip_date#80390, count(1) AS trips#80391L]\n         +- 'Filter (('to_date('d) >= 2024-12-01) AND ('to_date('d) <= 2024-12-31))\n",
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "backfilled_from": "logs/recorded-example-2-snow-saturday.jsonl",
+ "trace_seq": 53
+}

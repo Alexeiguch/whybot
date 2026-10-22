@@ -3,6 +3,56 @@
  "live_run_id": "recorded-example-3-mlk-fare",
  "trace": "logs/recorded-example-3-mlk-fare.jsonl",
  "recorded_at": "2026-10-22T14:27:58+00:00",
+ "hmem_recall": [
+  {
+   "id": "mem-1",
+   "relevance": 0.286,
+   "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> answered: Saturday 21 Dec 2024 taxi trips were essentially unchanged despite heavy snowfall (supported: H0, H1, H3, H5, H6)",
+   "tags": [
+    "investigation"
+   ],
+   "source": "agent:writer:recorded-example-2-snow-saturday"
+  },
+  {
+   "id": "mem-4",
+   "relevance": 0.202,
+   "content": "Lesson: avg_total_amount includes tip and surcharges; if analyzing base fare only, adjust the query to exclude those columns.",
+   "tags": [
+    "lesson"
+   ],
+   "source": "agent:writer:recorded-example-2-snow-saturday"
+  },
+  {
+   "id": "mem-5",
+   "relevance": 0.193,
+   "content": "Lesson (SQL repair on whybot.yellow_daily): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_S' was fixed by: SELECT trip_date, COUNT(*) AS trips FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-12-01' AND DATE '2024-12-31' GROUP BY trip_date ORDER BY trip_date LIMIT 50",
+   "tags": [
+    "lesson",
+    "sql_repair"
+   ],
+   "source": "agent:executor:recorded-example-2-snow-saturday"
+  },
+  {
+   "id": "mem-2",
+   "relevance": 0.175,
+   "content": "Lesson: yellow_daily table aggregates by trip_date; ensure weekday filtering is applied correctly when comparing against a specific Saturday.",
+   "tags": [
+    "lesson"
+   ],
+   "source": "agent:writer:recorded-example-2-snow-saturday"
+  },
+  {
+   "id": "mem-6",
+   "relevance": 0.165,
+   "content": "Lesson (SQL repair on whybot.us_holidays): error 'RESULT SANITY CHECK FAILED: query returned 0 rows (check filters and date formats)' was fixed by: SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2024-12-20' OR h.holiday_date = DATE '2024-12-23' ORDER BY h.holiday_date LIMIT 500",
+   "tags": [
+    "lesson",
+    "sql_repair"
+   ],
+   "source": "agent:executor:recorded-example-2-snow-saturday"
+  }
+ ],
+ "hmem_recall_source": "logs/recorded-example-3-mlk-fare.jsonl (hmem.recall event, backfilled)",
  "calls": [
   {
    "role": "planner",

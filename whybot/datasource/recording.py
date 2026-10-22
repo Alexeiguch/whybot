@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from .base import DataSource, QueryResult, sql_hash
+from .base import DataSource, DataSourceError, QueryResult, guard_sql, sql_hash
 
 
 class RecordingDataSource(DataSource):
@@ -32,10 +32,16 @@ class RecordingDataSource(DataSource):
         return self.inner.describe(table)
 
     def run(self, sql, timeout_s=60.0) -> QueryResult:
-        res = self.inner.run(sql, timeout_s)
-        from .base import guard_sql
-        g = guard_sql(sql, allowed_tables=self.inner.allowed_tables())
+        g = guard_sql(sql, allowed_tables=self.inner.allowed_tables())  # guard errors are local and re-raise identically on replay
         h = sql_hash(g)
+        try:
+            res = self.inner.run(sql, timeout_s)
+        except DataSourceError as e:
+            # A real Zetaris error is part of the investigation (it drives schema introspection and query repair), so it
+            # is recorded too: replay raises the same message and the repair prompts match the live run.
+            (self.dir / f"{h.split(':')[1]}.json").write_text(json.dumps({
+                "source": "zetaris", "sql": g, "sql_hash": h, "recorded_at": _now(), "error": str(e), "label": self.inner.label}, indent=1))
+            raise
         (self.dir / f"{h.split(':')[1]}.json").write_text(json.dumps({
             "source": "zetaris", "sql": g, "sql_hash": h, "recorded_at": _now(), "columns": res.columns,
             "rows": res.rows, "elapsed_s": res.elapsed_s, "label": self.inner.label, "rows_total": res.meta.get("rows_total")}, indent=1, default=str))

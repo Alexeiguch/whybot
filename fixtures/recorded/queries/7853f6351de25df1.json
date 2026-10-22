@@ -1,0 +1,10 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT s.saturday_date, MAX(CASE WHEN s.saturday_date = DATE '2024-12-21' THEN h.holiday_name END) AS target_holiday_name, MAX(CASE WHEN s.saturday_date = DATE '2024-12-21' THEN h.is_national END) AS target_is_national, COUNT(DISTINCT h.holiday_date) AS holidays_on_target_saturday FROM ( SELECT to_date(CAST(concat('2024120', seq) AS STRING), 'yyyyMMdd') AS saturday_date FROM ( SELECT seq FROM ( SELECT sequence(1,4) AS seq ) ) LATERAL VIEW explode(seq) exploded AS seq WHERE mod(seq, 7) = 6 ) s LEFT JOIN whybot.us_holidays h ON h.holiday_date = s.saturday_date GROUP BY s.saturday_date ORDER BY s.saturday_date LIMIT 500",
+ "sql_hash": "sha256:7853f6351de25df1",
+ "recorded_at": "2026-10-22T14:09:35.875Z",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[AMBIGUOUS_REFERENCE] Reference `seq` is ambiguous, could be: [`exploded`.`seq`, `seq`].; line 1 pos 482>>>\n\tat org.apache.spark.sql.hive.thriftserver.LightningSparkExecuteStatementOperation$$anon$2.run(LightningSparkExecuteStatementOperation.scala:247)\n\tat java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:539)\n\tat java.base/java.util.concurrent.FutureTask.run(FutureTask.java:264)\n\tat java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Threa",
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "backfilled_from": "logs/recorded-example-2-snow-saturday.jsonl",
+ "trace_seq": 19
+}

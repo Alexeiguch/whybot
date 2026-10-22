@@ -1,0 +1,10 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT d_date_sk, d_date, d_day_name, d_weekend, d_holiday, COUNT(*) AS trip_count FROM whybot.yellow_daily JOIN tpcds_db.date_dim ON whybot.yellow_daily.d_date_sk = tpcds_db.date_dim.d_date_sk WHERE d_year = 2024 AND d_moy = 12 AND d_dow = 7 GROUP BY d_date_sk, d_date, d_day_name, d_weekend, d_holiday ORDER BY d_date_sk LIMIT 500",
+ "sql_hash": "sha256:b4b7a141522a0bd0",
+ "recorded_at": "2026-10-22T14:10:12.758Z",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `whybot`.`yellow_daily`.`d_date_sk` cannot be resolved. Did you mean one of the following? [`date_dim`.`d_date_sk`, `date_dim`.`d_date`, `date_dim`.`d_date_id`, `date_dim`.`d_dom`, `date_dim`.`d_dow`].; line 1 pos 134;\n'GlobalLimit 500\n+- 'LocalLimit 500\n   +- 'Sort ['d_date_sk ASC NULLS FIRST], true\n      +- 'Aggregate ['d_date_sk, 'd_date, 'd_day_name, 'd_weekend, 'd_holiday], ['d_date_sk, 'd_date,",
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "backfilled_from": "logs/recorded-example-2-snow-saturday.jsonl",
+ "trace_seq": 37
+}
