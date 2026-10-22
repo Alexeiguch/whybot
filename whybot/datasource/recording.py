@@ -34,11 +34,11 @@ class RecordingDataSource(DataSource):
     def run(self, sql, timeout_s=60.0) -> QueryResult:
         res = self.inner.run(sql, timeout_s)
         from .base import guard_sql
-        g = guard_sql(sql)
+        g = guard_sql(sql, allowed_tables=self.inner.allowed_tables())
         h = sql_hash(g)
         (self.dir / f"{h.split(':')[1]}.json").write_text(json.dumps({
             "source": "zetaris", "sql": g, "sql_hash": h, "recorded_at": _now(), "columns": res.columns,
-            "rows": res.rows, "elapsed_s": res.elapsed_s, "label": self.inner.label}, indent=1, default=str))
+            "rows": res.rows, "elapsed_s": res.elapsed_s, "label": self.inner.label, "rows_total": res.meta.get("rows_total")}, indent=1, default=str))
         return res
 
     def close(self):

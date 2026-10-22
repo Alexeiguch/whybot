@@ -118,3 +118,75 @@ def test_result_sanity_flags_cross_join_and_empty():
     assert result_sanity(["dt", "prcp", "snow"], same)
     assert result_sanity(["dt", "n"], [])
     assert result_sanity(["dt", "prcp"], [["a", 1], ["b", 0], ["c", 1]]) == []
+
+
+def _claim_txt(statement, vals, derived=()):
+    from whybot.schemas import DerivedValue
+    return Claim(cid="C1", hypothesis_id="H0", statement=statement, direction="supports",
+                 cited_values=[CitedValue(qid="Q1", column="trips", value=v) for v in vals],
+                 derived=[DerivedValue(name=n, value=v, formula=f) for n, v, f in derived])
+
+
+BASE = "(v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100"
+VALS = [77244, 130018, 141642, 153149]          # target + three baseline Thursdays (real recorded rows)
+
+
+def test_derived_percentage_must_match_cited_cells():
+    from whybot.checks import check_derived_values
+    assert check_derived_values(_claim_txt("Trips fell 45.5% vs the baseline average", VALS, [("pct", -45.45, BASE)])) == []
+    bad = check_derived_values(_claim_txt("Trips fell 49.5% vs the baseline average", VALS, [("pct", -49.5, BASE)]))
+    assert bad and "45.45" in bad[0]                                    # the reviewed bug, now rejected
+    assert check_derived_values(_claim_txt("Trips fell 49.5%", VALS))    # undeclared percentage
+    assert check_derived_values(_claim_txt("Baseline was 1.83x the target", VALS, [("r", 1.83, "avg(v2,v3,v4) / v1")])) == []
+    assert check_derived_values(_claim_txt("x", VALS, [("r", 1, "__import__('os')")]))
+
+
+def test_derived_check_rejects_through_number_check():
+    from whybot.schemas import DerivedValue
+    e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
+                 rows=[["a", 77244], ["b", 130018], ["c", 141642], ["e", 153149]], row_count=4, tables=["t"])
+    c = Claim(cid="C1", hypothesis_id="H0", statement="down 49.5%", direction="supports",
+              cited_values=[CitedValue(qid="Q1", column="trips", value=v) for v in VALS],
+              derived=[DerivedValue(name="pct", value=-49.5, formula=BASE)])
+    ch = check_claim_numbers(c, {"Q1": e})
+    assert not ch.ok and "49.5" in ch.problems[0]
+
+
+def test_value_matches_has_no_prefix_or_loose_rounding():
+    assert not value_matches("2", "2024-02-13")
+    assert not value_matches("Thanks", "Thanksgiving Day")
+    assert not value_matches(5, 5.4) and not value_matches(0, 0.49)
+    assert value_matches("5.4", 5.43) and value_matches("Thanksgiving Day", "thanksgiving day")
+
+
+def test_row_hint_that_matches_no_row_fails():
+    c = claim(69067, hint="trip_date=2024-02-29")
+    ch = check_claim_numbers(c, {"Q1": ev()})
+    assert not ch.ok and "no row matches" in ch.problems[0]
+
+
+def test_numbers_in_final_text_must_be_backed():
+    from whybot.checks import check_text_numbers
+    e = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", columns=["d", "trips"],
+                 rows=[["2024-11-07", 130018], ["2024-11-14", 141642], ["2024-11-21", 153149], ["2024-11-28", 77244]], row_count=4, tables=["t"])
+    ok = "On 28 Nov 2024 trips fell 45.5% to 77,244 versus about 141.6k on the other 3 Thursdays of 2024."
+    assert check_text_numbers(ok, {"Q1": e}, {"Q1"}, [-45.45]) == []
+    bad = "Trips fell 90% to 70,000."
+    probs = check_text_numbers(bad, {"Q1": e}, {"Q1"}, [-45.45])
+    assert len(probs) == 2
+
+
+def test_guard_sql_blocks_functions_tables_and_keeps_literals():
+    import pytest
+    from whybot.datasource.base import DataSourceError, guard_sql, sql_hash
+    allowed = {"whybot.yellow_daily"}
+    for bad in ["SELECT reflect('java.lang.System','getenv') FROM whybot.yellow_daily",
+                "SELECT java_method('x','y')", "SELECT * FROM NY_TAXI.trips",
+                "SELECT * FROM whybot.yellow_daily a JOIN NY_TAXI.weather_data b ON 1=1",
+                "SELECT 1; DROP TABLE x", "DELETE FROM whybot.yellow_daily"]:
+        with pytest.raises(DataSourceError):
+            guard_sql(bad, allowed_tables=allowed)
+    ok = guard_sql("SELECT 'a -- not a comment;' AS s, trips FROM whybot.yellow_daily -- real comment", allowed_tables=allowed)
+    assert "'a -- not a comment;'" in ok and "real comment" not in ok and ok.endswith("LIMIT 500")
+    assert sql_hash("select 'Thanksgiving'") != sql_hash("select 'thanksgiving'")
+    assert sql_hash("SELECT 'X'") == sql_hash("select 'X'")

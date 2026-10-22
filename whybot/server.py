@@ -3,12 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .config import ROOT, Settings
 from .orchestrator import WhyBot, new_run_id
@@ -18,8 +19,11 @@ STATIC = Path(__file__).parent / "static"
 RUNS: dict[str, dict] = {}
 
 
+RUN_SLOTS = threading.BoundedSemaphore(int(os.environ.get("MAX_CONCURRENT_RUNS", "2")))  # LLM + Zetaris budget guard
+
+
 class RunInput(BaseModel):
-    query: str
+    query: str = Field(min_length=5, max_length=500)
 
 
 class RunOptions(BaseModel):
@@ -28,7 +32,7 @@ class RunOptions(BaseModel):
 
 
 class RunRequest(BaseModel):
-    run_id: str | None = None
+    run_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
     input: RunInput
     options: RunOptions = RunOptions()
 
@@ -37,8 +41,8 @@ def _settings(opts: RunOptions) -> Settings:
     s = Settings.from_env()
     if opts.sample_mode:
         s.sample_mode, s.data_source = True, "replay"
-    elif opts.data_source in ("zetaris", "replay", "dev"):
-        s.data_source = opts.data_source
+    elif opts.data_source in ("zetaris", "replay", "dev") and os.environ.get("ALLOW_SOURCE_OVERRIDE", "").lower() == "true":
+        s.data_source = opts.data_source  # off by default: a public endpoint cannot switch itself onto the dev source
     return s
 
 
@@ -59,12 +63,21 @@ def samples():
 @app.post("/run")
 def run_sync(req: RunRequest):
     """Blocking run: takes the hackathon JSON shape and returns the full structured result."""
-    return WhyBot(_settings(req.options)).run(req.input.query, run_id=req.run_id)
+    if not RUN_SLOTS.acquire(timeout=5):
+        raise HTTPException(429, "too many investigations running; retry shortly")
+    try:
+        return WhyBot(_settings(req.options)).run(req.input.query, run_id=req.run_id)
+    finally:
+        RUN_SLOTS.release()
 
 
 @app.post("/runs")
 def run_async(req: RunRequest):
     run_id = req.run_id or new_run_id()
+    if run_id in RUNS and not RUNS[run_id]["done"]:
+        raise HTTPException(409, "a run with this id is in progress")
+    if not RUN_SLOTS.acquire(timeout=5):
+        raise HTTPException(429, "too many investigations running; retry shortly")
     state = {"events": [], "result": None, "done": False, "cond": threading.Condition()}
     RUNS[run_id] = state
 
@@ -74,7 +87,12 @@ def run_async(req: RunRequest):
             state["cond"].notify_all()
 
     def work():
-        res = WhyBot(_settings(req.options)).run(req.input.query, run_id=run_id, subscribe=on_event)
+        try:
+            res = WhyBot(_settings(req.options)).run(req.input.query, run_id=run_id, subscribe=on_event)
+        except Exception as e:  # never leave the SSE stream hanging
+            res = {"status": "error", "error": {"type": type(e).__name__, "message": str(e)[:300]}, "run_id": run_id}
+        finally:
+            RUN_SLOTS.release()
         with state["cond"]:
             state["result"], state["done"] = res, True
             state["cond"].notify_all()

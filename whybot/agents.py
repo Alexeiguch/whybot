@@ -39,7 +39,7 @@ class Planner:
         self.llm = llm
 
     def plan(self, question: str, catalog: list[dict], notes: dict, memory: str, carryover: str,
-             feedback: str, done_queries: list[str], iteration: int) -> tuple[Plan, dict]:
+             feedback: str, done_queries: list[str], iteration: int, required: list[str] | None = None) -> tuple[Plan, dict]:
         known = [t["table"].lower() for t in catalog]
         user = (f"QUESTION: {question}\nITERATION: {iteration}\n\nCATALOG:\n{catalog_text(catalog, notes)}\n\n"
                 f"MEMORY (H-MEM recall of past investigations and lessons):\n{memory or '(none)'}\n\n"
@@ -58,6 +58,10 @@ class Planner:
                 errs.append("at least one query is required")
             if len(p.queries) > 8:
                 errs.append("at most 8 queries")
+            planned = {q.hypothesis_id for q in p.queries}
+            for rid in required or []:
+                if rid not in planned:
+                    errs.append(f"the Critic requested a follow-up test for {rid}; add a query for it")
             for q in p.queries:
                 if iteration == 1 and q.hypothesis_id not in ids:
                     errs.append(f"query references unknown hypothesis {q.hypothesis_id}")
@@ -97,6 +101,12 @@ class SQLAgent:
                 errs.append("must start with SELECT or WITH")
             if ";" in s:
                 errs.append("no semicolons")
+            def _n(x):
+                return re.sub(r"\s+limit\s+\d+\s*$", "", " ".join(x.lower().split()))
+            for f in failed or []:
+                if _n(f["sql"]) == _n(s):
+                    errs.append("this SQL is identical to an attempt that already failed; change the approach")
+                    break
             if not tables_in_sql(s, known):
                 errs.append(f"query must reference the catalog tables by full name: {', '.join(tables or known[:3])}")
             return errs
@@ -112,7 +122,11 @@ class Analyst:
         "Every claim must cite the exact numbers it relies on as cited_values {qid, column, value, row_hint} copied verbatim "
         "from the result rows (row_hint = key column=value identifying the row). Compare target vs baseline with effect sizes "
         "(differences or % changes you can show from cited values). Do not speculate beyond the numbers; draft refuting claims too. "
-        "At most 8 short claims. Treat suspicious results (identical values on every row) as unreliable."
+        "At most 8 short claims. Treat suspicious results (identical values on every row) as unreliable. "
+        "Every percentage, ratio or average written in a statement must be declared in derived[] with a formula over the claim's "
+        "cited values v1..vn (cite EVERY operand: the target and each baseline value), e.g. "
+        "{name: pct_change_vs_baseline, value: -45.45, formula: (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100}. The formula is re-evaluated; "
+        "a mismatch rejects the claim."
     )
 
     def __init__(self, llm: BaseLLM):

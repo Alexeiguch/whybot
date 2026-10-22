@@ -13,30 +13,55 @@ class DataSourceError(RuntimeError):
     pass
 
 
+_LIT = re.compile(r"'(?:[^']|'')*'")
+
+
+def _outside_literals(sql: str, fn) -> str:
+    """Apply fn to the text outside single-quoted literals only."""
+    out, pos = [], 0
+    for m in _LIT.finditer(sql):
+        out.append(fn(sql[pos:m.start()]))
+        out.append(m.group(0))
+        pos = m.end()
+    out.append(fn(sql[pos:]))
+    return "".join(out)
+
+
 def normalize_sql(sql: str) -> str:
-    sql = re.sub(r"--[^\n]*", " ", sql)
-    sql = re.sub(r"\s+", " ", sql).strip().rstrip(";").strip()
-    return sql
+    sql = _outside_literals(sql, lambda t: re.sub(r"--[^\n]*", " ", t))
+    sql = _outside_literals(sql, lambda t: re.sub(r"\s+", " ", t))
+    return sql.strip().rstrip(";").strip()
 
 
 def sql_hash(sql: str) -> str:
-    return "sha256:" + hashlib.sha256(normalize_sql(sql).lower().encode()).hexdigest()[:16]
+    """Case-insensitive for keywords and identifiers, case-sensitive inside string literals."""
+    return "sha256:" + hashlib.sha256(_outside_literals(normalize_sql(sql), str.lower).encode()).hexdigest()[:16]
 
 
 _FORBIDDEN = re.compile(r"\b(insert|update|delete|merge|drop|create|alter|truncate|grant|revoke|cache|uncache|refresh|call|exec|copy|attach|install|load|pragma|set)\b", re.I)
+_FORBIDDEN_FN = re.compile(r"\b(reflect|try_reflect|java_method|input_file_name|current_user|session_user|user|getenv|read_text|read_csv|read_parquet|read_json|system)\s*\(", re.I)
+_TABLE_REF = re.compile(r"\b(?:from|join)\s+([A-Za-z_][\w]*\.[A-Za-z_][\w]*)", re.I)
 
 
-def guard_sql(sql: str, default_limit: int = 500) -> str:
-    """Allow a single read-only SELECT/WITH statement; append a LIMIT when missing."""
+def guard_sql(sql: str, default_limit: int = 500, allowed_tables: set[str] | None = None) -> str:
+    """Allow a single read-only SELECT/WITH statement over allowlisted tables; append a LIMIT when missing."""
     s = normalize_sql(sql)
-    if ";" in s:
+    stripped = _LIT.sub("''", s)
+    if ";" in stripped:
         raise DataSourceError("multiple statements are not allowed")
     if not re.match(r"(?is)^\s*(select|with)\b", s):
         raise DataSourceError("only SELECT/WITH queries are allowed")
-    stripped = re.sub(r"'[^']*'", "''", s)
     m = _FORBIDDEN.search(stripped)
     if m:
         raise DataSourceError(f"forbidden keyword in query: {m.group(1)}")
+    m = _FORBIDDEN_FN.search(stripped)
+    if m:
+        raise DataSourceError(f"forbidden function in query: {m.group(1)}")
+    if allowed_tables is not None:
+        refs = {r.lower() for r in _TABLE_REF.findall(stripped)}
+        bad = sorted(refs - {t.lower() for t in allowed_tables})
+        if bad:
+            raise DataSourceError(f"table(s) not in the evidence allowlist: {', '.join(bad)} (allowed: {', '.join(sorted(allowed_tables))})")
     if not re.search(r"(?is)\blimit\s+\d+\s*$", s):
         s = f"{s} LIMIT {default_limit}"
     return s
@@ -64,6 +89,10 @@ class QueryResult:
 
     def __post_init__(self):
         self.rows = [[_jsonable(v) for v in r] for r in self.rows]
+
+    @property
+    def truncated(self) -> bool:
+        return bool(self.meta.get("rows_total", 0) > len(self.rows))
 
     def preview(self, n: int = 12) -> str:
         head = " | ".join(self.columns)
@@ -93,8 +122,14 @@ class DataSource:
     def _execute(self, sql: str) -> QueryResult:
         raise NotImplementedError
 
+    def allowed_tables(self) -> set[str] | None:
+        try:
+            return {t["table"].lower() for t in self.catalog()}
+        except Exception:
+            return None
+
     def run(self, sql: str, timeout_s: float = 60.0) -> QueryResult:
-        sql = guard_sql(sql)
+        sql = guard_sql(sql, allowed_tables=self.allowed_tables())
         t0 = time.time()
         ex = cf.ThreadPoolExecutor(max_workers=1)
         fut = ex.submit(self._execute, sql)

@@ -23,6 +23,7 @@ class Evidence:
     error: str = ""
     attempts: list[dict] = field(default_factory=list)   # every SQL tried, with error, for repair lessons
     wm_fact_id: str | None = None
+    truncated: bool = False
 
     @property
     def primary_table(self) -> str:
@@ -37,5 +38,7 @@ class Evidence:
         head = " | ".join(self.columns)
         body = "\n".join(" | ".join(str(v) for v in r) for r in self.rows[:max_rows])
         more = f"\n... {self.row_count - max_rows} more rows not shown" if self.row_count > max_rows else ""
+        if self.truncated:
+            more += "\nWARNING: the result was truncated at the row cap; treat totals as partial"
         return (f"[{self.qid}] ({self.hypothesis_id}) {self.purpose}\nsql_hash={self.sql_hash} tables={','.join(self.tables)}\n"
                 f"{head}\n{body}{more}")

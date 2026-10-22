@@ -32,12 +32,13 @@ td code{font-size:11.5px;color:var(--mute)}tr.failed td{color:var(--bad)}tr.hl{b
 <main>
 <section><h2>Agent timeline (live)</h2><div id="timeline"></div></section>
 <div style="display:grid;gap:14px">
+<div id="mode" style="display:none;margin:8px 0;padding:8px 12px;border-radius:6px;background:#3b2f00;color:#ffd666;font-weight:600"></div>
 <section id="answer"><h2>Cited answer</h2><div id="ans" style="color:var(--mute)">Run an investigation to see the answer.</div></section>
 <section><h2>Hypotheses</h2><div id="hyps"></div></section>
 <section><h2>Evidence table</h2><table><thead><tr><th>Query</th><th>Hyp.</th><th>Table</th><th>SQL hash</th><th>Rows</th><th>Status</th></tr></thead><tbody id="evb"></tbody></table></section>
 </div></main>
 <script>
-const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let evidence={};
 fetch('/samples').then(r=>r.json()).then(xs=>xs.forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x.input.query.slice(0,70)+'…';b.onclick=()=>{$('#q').value=x.input.query};$('#samples').append(b)}));
 fetch('/health').then(r=>r.json()).then(h=>setSrc(h.sample_mode?'recorded':(h.data_source==='dev'?'dev':'live'),'server default: '+h.data_source));
@@ -45,6 +46,7 @@ function setSrc(kind,label){const e=$('#src');e.className=kind;e.textContent=lab
 function addEv(ev){
   const d=document.createElement('div');d.className='ev '+ev.status;
   d.innerHTML=`<span class="t">${ev.elapsed_s}s · it${ev.iteration}</span> <span class="ag ${ev.agent_name}">${ev.agent_name}</span><b>${esc(ev.action)}</b>${ev.target_agent?' → '+esc(ev.target_agent):''}${ev.retry_count?` <span class="pill">retry ${ev.retry_count}</span>`:''}<div>${esc(ev.output_summary)}</div>`;
+  if(ev.action==='llm_mode'){const m=$('#mode');m.style.display='block';m.textContent=ev.data&&ev.data.mode==='replay'?`REPLAY of live run ${ev.data.live_run_id||'?'} recorded at ${ev.data.recorded_at||'?'} (live trace: ${ev.data.trace||'?'}). Checks and branching re-execute; LLM and SQL outputs are the recorded ones.`:'LIVE: NVIDIA Nemotron calls and Zetaris queries are happening now.';m.style.background=ev.data&&ev.data.mode==='replay'?'#3b2f00':'#0f3b1f';m.style.color=ev.data&&ev.data.mode==='replay'?'#ffd666':'#7ee2a8'}
   if(ev.data&&ev.data.sql){d.innerHTML+=`<details><summary>SQL ${esc(ev.data.sql_hash)}</summary><pre>${esc(ev.data.sql)}</pre></details>`}
   $('#timeline').append(d);$('#timeline').scrollTop=1e9;
   if(ev.action==='datasource'){const k=ev.data.kind;setSrc(k==='live'?'live':k,ev.output_summary)}
@@ -59,11 +61,12 @@ function hl(q){document.querySelectorAll('tr.hl').forEach(t=>t.classList.remove(
 function showResult(r){
   if(r.status==='error'){$('#ans').innerHTML=`<div class="status error">error</div><pre>${esc(JSON.stringify(r.error,null,1))}</pre>`;return}
   const o=r.output;
-  $('#ans').innerHTML=`<div class="status ${r.status}">${r.status.replace('_',' ')} · confidence ${(o.confidence||0).toFixed(2)} · ${r.execution_time_seconds}s · ${r.iterations} iteration(s)</div><h3>${esc(o.headline)}</h3><p>${esc(o.answer)}</p><p><b>Recommendation:</b> ${esc(o.recommendation)}</p><ol>${o.claims.map(c=>`<li>${esc(c.text)} ${c.citations.map(x=>`<span class="cite" onclick="hl('${x.qid}')">${esc(x.qid)} · ${esc(x.sql_hash)} · ${esc(x.table)}</span>`).join('')}</li>`).join('')}</ol>${o.caveats.length?`<b>Caveats</b><ul>${o.caveats.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:''}<div style="color:var(--mute);font-size:12px">Data source: ${esc(r.data_source.label)} · trace: ${esc(r.log_file)}</div>`;
+  $('#ans').innerHTML=`<div class="status ${r.status}">${r.status.replace('_',' ')} · confidence ${(o.confidence||0).toFixed(2)} · ${r.execution_time_seconds}s · ${r.iterations} iteration(s)</div><h3>${esc(o.headline)}</h3><p>${esc(o.answer)}</p><p><b>Recommendation:</b> ${esc(o.recommendation)}</p><ol>${o.claims.map(c=>`<li>${esc(c.text)} ${c.citations.map(x=>`<span class="cite" data-qid="${esc(x.qid)}">${esc(x.qid)} · ${esc(x.sql_hash)} · ${esc(x.table)}</span>`).join('')}</li>`).join('')}</ol>${o.caveats.length?`<b>Caveats</b><ul>${o.caveats.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:''}<div style="color:var(--mute);font-size:12px">Data source: ${esc(r.data_source.label)} · trace: ${esc(r.log_file)}</div>`;
   $('#hyps').innerHTML=(r.hypotheses||[]).map(h=>`<div class="hyp"><b>${esc(h.id)}</b> <span class="pill">${esc(h.kind)}</span> <span class="pill ${h.status}">${esc(h.status)}</span> ${esc(h.statement)}</div>`).join('');
   drawEv(r.evidence);
 }
-$('#f').onsubmit=async e=>{e.preventDefault();$('#timeline').innerHTML='';$('#evb').innerHTML='';$('#hyps').innerHTML='';evidence={};$('#ans').textContent='Investigating…';
+document.addEventListener('click',e=>{const c=e.target.closest('.cite');if(c)hl(c.dataset.qid)});
+$('#f').onsubmit=async e=>{e.preventDefault();$('#mode').style.display='none';$('#timeline').innerHTML='';$('#evb').innerHTML='';$('#hyps').innerHTML='';evidence={};$('#ans').textContent='Investigating…';
   const m=$('#mode').value, options=m==='sample'?{sample_mode:true}:(m?{data_source:m}:{});
   const r=await fetch('/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:{query:$('#q').value},options})}).then(r=>r.json());
   const es=new EventSource(r.events);es.addEventListener('trace',m=>addEv(JSON.parse(m.data)));es.addEventListener('result',m=>{showResult(JSON.parse(m.data));es.close()});};

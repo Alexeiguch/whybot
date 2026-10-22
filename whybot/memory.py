@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import itertools
 import json
+from .config import SECRET_ENV_NAMES
 import os
 import shutil
 import subprocess
@@ -32,9 +33,13 @@ class Meterless:
         if not shutil.which("node"):
             raise MeterlessError("node is not on PATH")
         data_dir.mkdir(parents=True, exist_ok=True)
-        env = {**os.environ, "METERLESS_DATA_DIR": str(data_dir)}
+        env = {k: v for k, v in os.environ.items() if k not in SECRET_ENV_NAMES}  # the bridge needs no credentials
+        env["METERLESS_DATA_DIR"] = str(data_dir)
+        log_dir = BRIDGE_DIR.parent / "logs"
+        log_dir.mkdir(exist_ok=True)
+        self._errlog = open(log_dir / "meterless-bridge.log", "a")
         self.p = subprocess.Popen([str(tsx), "bridge.ts"], cwd=BRIDGE_DIR, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                  stderr=subprocess.DEVNULL, text=True, env=env)
+                                  stderr=self._errlog, text=True, env=env)
         self.ids = itertools.count(1)
         self.timeout_s = timeout_s
         self._lock = threading.Lock()
@@ -61,6 +66,10 @@ class Meterless:
             self.p.stdin.write(json.dumps({"id": i, "method": method, "params": params}, default=str) + "\n")
             self.p.stdin.flush()
             resp = self._read()
+            while resp.get("id") is not None and resp.get("id") < i:  # a late answer to a call that timed out earlier
+                resp = self._read()
+        if resp.get("id") != i:
+            raise MeterlessError(f"{method}: bridge answered request {resp.get('id')} instead of {i}")
         if "error" in resp:
             raise MeterlessError(f"{method}: {resp['error']}")
         return resp["result"]

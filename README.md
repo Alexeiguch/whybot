@@ -1,6 +1,8 @@
 # WhyBot
 
-**A team of agents that explains *why* a metric changed. It forms hypotheses, tests them with SQL on Zetaris, rejects the ones the numbers don't support, and returns a recommendation where every claim cites its query id, SQL hash and source table.**
+**WhyBot tells you why a number moved, and shows the query behind every sentence.**
+
+A team of agents forms hypotheses, tests them with SQL that reads each source in place through Zetaris, rejects the ones the numbers don't support, and returns a recommendation where every claim cites its query id, SQL hash and source table.
 
 Built for the GenAI Works **Open Agent Hackathon 2026, Track 2: "The Agent That Can Explain Why"**.
 
@@ -10,7 +12,7 @@ Built for the GenAI Works **Open Agent Hackathon 2026, Track 2: "The Agent That 
 
 ## The problem and the users
 
-An analyst sees a metric move, for example "yellow-taxi trips fell 35% last Tuesday", and has to explain it by tomorrow's stand-up. Was it the weather, a holiday, the day of the week, a change in fare or zone mix, or broken data? Answering that today means writing a handful of SQL queries across separate sources (trips, weather, calendar), eyeballing the results, and then writing a summary that nobody can audit.
+An operations analyst sees daily yellow taxi trips fall from between 130,018 and 153,149 on the other November 2024 Thursdays to 77,244 on Thursday 28 November 2024, and has to explain it by the next stand-up. Was it Thanksgiving, the 21.8 mm of rain, a change in trip mix, or missing data? Answering means querying trips, weather and a holiday calendar separately, lining them up by hand, and writing a summary nobody can audit.
 
 WhyBot takes **one bounded question** about **NYC yellow-taxi trips + NOAA weather + US holidays**, federated through Zetaris Lightning SQL (overlap window 2024-04-01 to 2025-02-05). It returns:
 
@@ -19,7 +21,7 @@ WhyBot takes **one bounded question** about **NYC yellow-taxi trips + NOAA weath
 - the hypotheses it **rejected**, with the reason for each,
 - a full **JSONL trace** of every agent message, SQL statement, critic verdict, retry and escalation.
 
-Users: data and BI analysts, ops and revenue analysts, and anyone who has to defend a "why" to a stakeholder.
+Users: operations analysts at taxi fleets, ride-hail operators and city transport teams who must explain a change in daily trips, and the managers who need an answer they can forward. The loop itself is metric-agnostic (see Status and roadmap).
 
 ## How it works
 
@@ -52,7 +54,7 @@ flowchart TD
 | Planner | `nvidia/nemotron-3-ultra-550b-a55b` | Turns the question into falsifiable hypotheses (metric/H0, weather, holiday, day-of-week, fare mix, zone mix, data quality) and a SQL plan. Revises the plan from critic feedback and Markovian carryover. |
 | Executor | `nvidia/nemotron-3.5-lightning-30b-a3b` | Writes Lightning SQL and runs it through the `DataSource` adapter (read-only guard, timeout). On an error **or a suspicious result** (such as a cross join that gives every row identical values) it re-introspects the schema and repairs the query, up to 2 times. If the query still fails, that hypothesis is marked untestable for the iteration. |
 | Analyst | Lightning | Drafts claims for and against each hypothesis, citing exact values `{qid, column, value, row_hint}`. |
-| Critic / Evaluator | Ultra | First, a **deterministic check** confirms every cited number appears in that query's rows. Then the LLM critic judges strength, baseline fairness and confounders, sets each hypothesis's status, and decides **accept / retry (with follow-up tests) / insufficient_evidence**. The Critic also runs a deterministic **holiday data-quality check**: it compares `TPCDS_DB.date_dim.d_holiday` with the real Nager.Date holidays around the target date and reports any disagreement as a **data-quality note**, never as evidence. |
+| Critic / Evaluator | Ultra | First, a **deterministic check** confirms every cited number appears in that query's rows, and re-evaluates every percentage or ratio in a claim from its declared formula over the cited cells (so "fell 49.5%" is rejected when the cells give 45.5%). Then the LLM critic judges strength, baseline fairness and confounders, sets each hypothesis's status, and decides **accept / retry (with follow-up tests) / insufficient_evidence**. The Critic also runs a deterministic **holiday data-quality check**: it compares `TPCDS_DB.date_dim.d_holiday` with the real Nager.Date holidays around the target date and reports any disagreement as a **data-quality note**, never as evidence. |
 | Writer | Lightning | Writes the final answer from critic-approved claims only. A validator rejects any citation whose qid, SQL hash or table doesn't match real evidence and retries with feedback. As a last resort it drops uncited claims. |
 
 **Control flow is real branching, not a pipeline.** Critic verdicts and the number checks drive `checks.decide_next()`: *write*, *retry* (back to the Planner with feedback), or *escalate* to "insufficient evidence". Iterations are capped at 3, and every LLM call, SQL query and the whole run have timeouts. Every JSON output is validated against a pydantic schema and retried with the validation error. Nemotron reasoning content is stripped and never logged.
@@ -61,7 +63,7 @@ flowchart TD
 
 | Sponsor | Where it is used |
 |---|---|
-| **Zetaris** (required) | The only production data path. `whybot/datasource/zetaris_jdbc.py` connects with JayDeBeApi + the Zetaris JDBC driver (`com.zetaris.lightning.jdbc.LightningDriver`, `jdbc:zetaris:lightning@localhost:10000`). It introspects the schema with `DESCRIBE DATASOURCE TABLE` (falling back to `SELECT … LIMIT 1`) and runs the agents' Lightning SQL. Zetaris federates three real sources: `NY_TAXI.yellow_taxi` (S3 CSV, shipped with the platform), `NOAA_GHCN_S3` (public S3 CSV) and `HOLIDAYS_REST` (Nager.Date REST), plus the `TPCDS_DB.date_dim` calendar, all exposed through SchemaStore views in container `whybot` (see `sql/` and `docs/zetaris.md`). `SAMPLE_MODE` replays **recorded real Zetaris results** (`fixtures/recorded`), and the UI labels them **RECORDED**. |
+| **Zetaris** (required) | The only production data path. Every query an agent writes is Lightning SQL sent over JDBC (`whybot/datasource/zetaris_jdbc.py`: JayDeBeApi + `com.zetaris.lightning.jdbc.LightningDriver`, `jdbc:zetaris:lightning@localhost:10000`), and Zetaris reads each source **in place**, with no copies or ETL into WhyBot: real TLC yellow trips as S3 CSV (`NY_TAXI.yellow_taxi`, 38.7M rows, through the cached `whybot.yellow_daily` view), NOAA GHCN-Daily as public S3 CSV (`NOAA_GHCN_S3`), Nager.Date holidays as a live REST source (`HOLIDAYS_REST`), and the `TPCDS_DB.date_dim` Parquet calendar. The SchemaStore views live in container `whybot` (`sql/03_whybot_views_create.sql`). `sql/10_federated_daily_select.sql` is the four-way federated query (taxi × weather × holidays × date_dim, about 17 s for a 62-day window). Schema introspection uses `DESCRIBE DATASOURCE TABLE`, falling back to `SELECT … LIMIT 1`. `SAMPLE_MODE` replays **recorded real Zetaris results** (`fixtures/recorded`), labelled **RECORDED** in the UI. |
 | **Meterless** (required) | The cognition layer, through a JSON-lines bridge (`meterless_bridge/bridge.ts`, `whybot/memory.py`) to the Meterless TypeScript reference engines, vendored under `vendor/meterless` (Apache-2.0). **H-MEM:** past investigations, lessons and SQL-repair fixes are stored after each run and recalled for the Planner and SQL agent before planning (threshold tuned to 0.15 because the reference hashed embeddings score low). **World Model:** every successful query result, and every critic-supported claim, is asserted as a fact with provenance (`by` agent, `runId`, `checksum` = SQL hash, `url` = `zetaris://<table>`). **Markovian:** each loop iteration is one chunk, and its `[STATE_CHECKPOINT]` is compressed into a bounded carryover for the next Planner call. The finished investigation is recorded as a Markovian run. |
 | **NVIDIA** | All reasoning runs on **Nemotron** through the OpenAI-compatible NVIDIA API (`https://integrate.api.nvidia.com/v1`). Ultra 550B handles planning and critique, and Lightning 30B handles SQL, analysis and writing. No local GPU is needed. |
 | **Cursor** | The whole project was developed in Cursor (with Grok Bot agents). |
@@ -97,7 +99,7 @@ The synthetic `NY_TAXI` tables (`trips`, `weather_data`, `surge_pricing`, `drive
 
 ```bash
 # CLI: one investigation, JSON result on stdout, readable log on stderr, trace in logs/<run_id>.jsonl
-.venv/bin/python run.py "Why did NYC yellow taxi trips drop on Tuesday 13 Feb 2024 compared with the other Tuesdays in February 2024?"
+.venv/bin/python run.py "Why did NYC yellow taxi trips drop on Thursday 28 Nov 2024 compared with the surrounding weeks?"
 .venv/bin/python run.py --example input_examples/example_1.json --markdown
 
 # API + web UI on 0.0.0.0:8000
@@ -112,9 +114,18 @@ API: `POST /run` (blocking, hackathon JSON shape), `POST /runs` + `GET /runs/{id
 
 | Mode | What it is |
 |---|---|
-| `DATA_SOURCE=zetaris` (default) | Live Zetaris over JDBC. If Zetaris is unreachable and recorded fixtures exist, the run falls back to replay and says so in the trace. A typical live run takes 4 to 8 minutes; the wall-clock time is recorded in each trace's `finish` event and in `result.wall_clock`. |
-| `SAMPLE_MODE=true` | Replays **recorded real Zetaris query results** from `fixtures/recorded`, labelled "RECORDED". Without an NVIDIA key it also replays the recorded LLM responses of that run, so it works fully offline. Record with `scripts/record_fixtures.py` against live Zetaris. |
+| `DATA_SOURCE=zetaris` (default) | Live Zetaris over JDBC. If Zetaris is unreachable and recorded fixtures exist, the run falls back to replay and says so in the trace. A typical live run takes 4 to 8 minutes, within the run budget `RUN_TIMEOUT_S=900`. The wall-clock time is recorded in each trace's `finish` event and in `result.wall_clock`. |
+| `SAMPLE_MODE=true` | Replays a **recorded live run**: real Zetaris query results from `fixtures/recorded/queries` and the Nemotron responses of that same run from `fixtures/recorded/llm`. Works fully offline, no credentials. See [What SAMPLE_MODE is](#what-sample_mode-is). |
 | `DATA_SOURCE=dev` | **DEV-ONLY** DuckDB over a small public Jan-Feb 2024 sample (`scripts/fetch_dev_data.py`), used before Zetaris was up. It is not Zetaris, is shown with a red banner in the UI, and is never used for the demo. |
+
+### What SAMPLE_MODE is
+
+SAMPLE_MODE is a faithful replay of one real investigation, not a hard-coded answer.
+
+- **What is replayed:** the SQL results (each recorded from live Zetaris and keyed by the SQL hash of the exact statement) and the LLM responses (recorded in order per agent from the live Nemotron calls). Every recorded call keeps its model, original latency, token counts, `recorded_at`, a hash of the prompt that was sent, and the id of the live run. That run's full live trace is committed at `logs/recorded-<run_id>.jsonl`.
+- **What re-executes:** the orchestration itself. SQL guarding and hashing, result-sanity checks, the deterministic number and derived-value checks, the branch policy (retry, write or escalate), the Writer's citation validator, and trace writing all run again. Each replayed LLM call reports `prompt_match`, which says whether today's prompt hashes to the one sent live, so any drift since recording is visible rather than hidden.
+- **How it is labelled:** the trace opens with an `Orchestrator.llm_mode` event naming the live run and its trace. The UI shows a yellow "REPLAY of live run … recorded at …" banner, and every evidence row carries "RECORDED zetaris results".
+- **How to see it live instead:** `SAMPLE_LLM=live` makes live Nemotron calls against the recorded SQL results, and `DATA_SOURCE=zetaris` without SAMPLE_MODE runs everything live.
 
 **Docker**
 
@@ -132,6 +143,10 @@ docker run --rm -p 8000:8000 -e SAMPLE_MODE=true whybot       # recorded replay,
 
 `output_examples/` holds the full JSON results of the recorded **live Zetaris** runs. Their traces are `logs/recorded-*.jsonl`. `logs/samples/DEV-ONLY-*` is an early trace from the dev stand-in.
 
+## Demo video
+
+[TBD: link to the 1-4 minute demo video]
+
 ## Logs and traces
 
 Each run writes `logs/<run_id>.jsonl`, one event per line: `timestamp, run_id, seq, iteration, agent_name, action, input_summary, output_summary, target_agent, status, retry_count, confidence, data`. Events cover the plan, every SQL statement with its hash, query results, failures, schema introspection and repairs, result-sanity rejections, number checks, critic verdicts, branch decisions, Markovian carryover, World Model fact ids, H-MEM recall and remember, the final answer, and escalations. It also writes `logs/<run_id>.result.json`. Secrets are redacted before anything is written.
@@ -142,7 +157,7 @@ Each run writes `logs/<run_id>.jsonl`, one event per line: `timestamp, run_id, s
 .venv/bin/python -m pytest -q
 ```
 
-The tests use a scripted fake LLM and a fake data source, with no network (34 tests). They cover the number checks, every branch of the decision policy (accept, retry, cap, early escalation, timeout), SQL repair, then critic retry, then accept; escalation after 3 iterations; Writer citation retry; query fallback; planner catalog validation; the SQL guard; reasoning stripping; replay hit, miss and refusal; result-sanity checks; the holiday data-quality check; the API and SSE endpoints; and secret redaction in traces.
+The tests use a scripted fake LLM and a fake data source, with no network, plus an end-to-end SAMPLE_MODE replay of the committed headline fixture. They cover the number checks (including derived percentages and ratios), every branch of the decision policy (accept, retry, cap, early escalation, timeout), SQL repair, then critic retry, then accept; escalation after 3 iterations; Writer citation retry; query fallback; planner catalog validation; the SQL guard (single read-only statement, forbidden functions such as `reflect`/`java_method`, and the table allowlist enforced on the executed SQL); value matching without prefix or loose-rounding matches; every number in the final headline and answer traced to evidence; run_id validation and a fresh trace per run; API input limits; reasoning stripping; replay hit, miss and refusal; result-sanity checks; the holiday data-quality check; the API and SSE endpoints; and secret redaction in traces.
 
 ## Status and roadmap
 

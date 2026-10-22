@@ -54,6 +54,9 @@ def parse_dates(text: str) -> list:
     return out
 
 
+RUN_ID_RE = __import__("re").compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,80}$")
+
+
 def result_ok(r) -> bool:
     return bool(r) and r.get("status") != "error"
 
@@ -84,7 +87,10 @@ class WhyBot:
             role = ev.get("role", "?")
             agent = {"planner": "Planner", "sql": "Executor", "analyst": "Analyst", "critic": "Critic", "writer": "Writer"}.get(role, role)
             if ev["event"] == "llm_call":
-                tr.emit(agent, "llm_call", output_summary=f"{ev['model']} {ev['latency_s']}s tokens={ev.get('completion_tokens')}",
+                summ = (f"{ev['model']} recorded {ev.get('recorded_at')} (live {ev.get('original_latency_s')}s, "
+                        f"tokens={ev.get('original_completion_tokens')}, prompt_match={ev.get('prompt_match')})") if ev.get("replayed") \
+                    else f"{ev['model']} {ev['latency_s']}s tokens={ev.get('completion_tokens')}"
+                tr.emit(agent, "llm_call", output_summary=summ,
                         status="info", data={k: v for k, v in ev.items() if k != "event"})
             else:
                 tr.emit(agent, ev["event"], output_summary=str(ev.get("error", ""))[:300], status="retry",
@@ -95,12 +101,18 @@ class WhyBot:
         import os
         from .llm import CassetteLLM, NvidiaLLM, cassette_path
         cpath = cassette_path(self.s.fixtures_dir, self._question)
-        if self.s.sample_mode and (os.environ.get("SAMPLE_LLM") == "replay" or not os.environ.get("NVIDIA_API_KEY")):
-            tr.emit("Orchestrator", "llm_mode", output_summary=f"SAMPLE_MODE: replaying recorded LLM responses from {cpath.name}", status="info")
-            return CassetteLLM(cpath, on_call=on_call)
+        if self.s.sample_mode and os.environ.get("SAMPLE_LLM", "replay") != "live":
+            llm = CassetteLLM(cpath, on_call=on_call)
+            h = llm.header
+            tr.emit("Orchestrator", "llm_mode", status="info",
+                    output_summary=f"SAMPLE_MODE REPLAY of live run {h.get('live_run_id')} recorded {h.get('recorded_at')} "
+                                   f"(trace {h.get('trace')}); LLM and SQL outputs come from that run, the checks and branch policy re-execute",
+                    data={"mode": "replay", **h})
+            return llm
         live = NvidiaLLM(self.s, on_call=on_call)
+        tr.emit("Orchestrator", "llm_mode", status="info", output_summary="LIVE NVIDIA Nemotron calls", data={"mode": "live"})
         if self.s.record_fixtures:
-            self._cassette = CassetteLLM(cpath, inner=live, on_call=on_call)
+            self._cassette = CassetteLLM(cpath, inner=live, on_call=on_call, run_id=self._run_id)
             return self._cassette
         return live
 
@@ -119,12 +131,15 @@ class WhyBot:
                 return ds
             raise
 
-    def _make_meterless(self, tr: Tracer):
+    def _make_meterless(self, tr: Tracer, replay: bool = False):
         if self._meterless is not None or not self.use_meterless:
             return self._meterless
         try:
             from .memory import Meterless
-            return Meterless(self.s.meterless_data_dir)
+            # Replayed / dev runs get their own store so they never pollute the live investigation memory.
+            d = self.s.meterless_data_dir if not replay else self.s.meterless_data_dir.with_name(self.s.meterless_data_dir.name + "-replay")
+            tr.emit("Memory", "meterless_store", status="info", output_summary=f"Meterless data dir: {d.name}")
+            return Meterless(d)
         except Exception as e:
             tr.emit("Memory", "meterless_unavailable", output_summary=str(e)[:300], status="error")
             return None
@@ -132,7 +147,10 @@ class WhyBot:
     # ------------------------------------------------------------------ main entry
     def run(self, question: str, run_id: str | None = None, subscribe=None) -> dict:
         run_id = run_id or new_run_id()
-        self._question, self._cassette = question, None
+        if not RUN_ID_RE.match(run_id):
+            raise ValueError("invalid run_id: use letters, digits, '.', '_' or '-' (max 80 chars)")
+        self._question, self._cassette, self._run_id = question, None, run_id
+        result = None
         t0 = time.time()
         deadline = t0 + self.s.run_timeout_s
         tr = Tracer(run_id, self.s.logs_dir, echo=self.echo)
@@ -145,9 +163,10 @@ class WhyBot:
                     data={"models": {"planner": self.s.planner_model, "critic": self.s.critic_model,
                                      "sql": self.s.sql_model, "writer": self.s.writer_model}})
             llm = self._make_llm(tr)
+            llm.deadline, llm.call_timeout_s = deadline, self.s.llm_timeout_s
             ds = self._make_ds(tr)
             tr.emit("Executor", "datasource", output_summary=ds.label, data={"kind": ds.kind, "dialect": ds.dialect})
-            mem = self._make_meterless(tr)
+            mem = self._make_meterless(tr, replay=ds.kind != "live")
             result = self._investigate(question, run_id, tr, llm, ds, mem, deadline)
         except Exception as e:  # structured error, never a silent crash
             tr.emit("Orchestrator", "error", output_summary=f"{type(e).__name__}: {e}", status="error")
@@ -188,6 +207,8 @@ class WhyBot:
             inv_entity = inv_entity["id"] if inv_entity else None
 
         hypotheses: dict[str, Hypothesis] = {}
+        hyp_status: dict[str, HypothesisStatus] = {}
+        prev_claims: ClaimSet | None = None
         evidence: dict[str, Evidence] = {}
         carryover, feedback = "", ""
         claims = ClaimSet(claims=[])
@@ -205,9 +226,10 @@ class WhyBot:
                 break
             # ---- Plan
             done = [f"{e.qid} [{e.status}] ({e.hypothesis_id}) {e.purpose[:140]}" for e in evidence.values()]
-            plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it)
+            required = sorted({f.hypothesis_id for f in report.follow_up_queries}) if (report and it > 1) else []
+            plan, meta = planner.plan(question, catalog, self.notes, memory_text, carryover, feedback, done, it, required)
             for h in plan.hypotheses:
-                hypotheses.setdefault(h.id, h)
+                hypotheses[h.id] = h  # revisions with the same id replace the earlier statement
             tr.emit("Planner", "plan", input_summary=feedback[:300] or question, target_agent="Executor",
                     output_summary=f"{len(plan.hypotheses)} hypotheses, {len(plan.queries)} queries; metric={plan.metric}",
                     data={"plan": plan.model_dump(), "llm": meta})
@@ -244,13 +266,24 @@ class WhyBot:
                 continue
 
             # ---- Analyse
-            try:
-                claims, meta = analyst.draft(question, plan_text, ok_ev, feedback)
-                tr.emit("Analyst", "draft_claims", target_agent="Critic", output_summary=f"{len(claims.claims)} claims",
-                        data={"claims": claims.model_dump()["claims"], "llm": meta})
-            except LLMError as e:
-                tr.emit("Analyst", "failed", output_summary=str(e)[:300], status="error")
-                claims = ClaimSet(claims=[])
+            claims = None
+            for a_try in (1, 2):  # one retry before giving up on this iteration's analysis
+                try:
+                    claims, meta = analyst.draft(question, plan_text, ok_ev, feedback)
+                    tr.emit("Analyst", "draft_claims", target_agent="Critic", output_summary=f"{len(claims.claims)} claims",
+                            data={"claims": claims.model_dump()["claims"], "llm": meta})
+                    break
+                except LLMError as e:
+                    tr.emit("Analyst", "failed", output_summary=f"attempt {a_try}: {str(e)[:300]}", status="error")
+                    if "budget exhausted" in str(e) or "cassette" in str(e):
+                        break
+            if claims is None:
+                if prev_claims is not None and prev_claims.claims:
+                    claims = prev_claims  # keep the last drafted claims rather than discarding earlier work
+                    tr.emit("Orchestrator", "reuse_claims", output_summary=f"Analyst unavailable; re-checking the {len(claims.claims)} claims of the previous iteration", status="fallback")
+                else:
+                    claims = ClaimSet(claims=[])
+            prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic
             checks = {c.cid: check_claim_numbers(c, evidence) for c in claims.claims}
@@ -264,7 +297,7 @@ class WhyBot:
                 except LLMError as e:
                     tr.emit("Critic", "failed", output_summary=str(e)[:300], status="error")
             if report is None:
-                report = self._fallback_report(claims, checks)
+                report = self._fallback_report(claims, checks, retry=it < self.s.max_iterations)
                 tr.emit("Critic", "fallback_verdicts", output_summary="LLM critic unavailable; deterministic verdicts only", status="fallback")
             else:
                 tr.emit("Critic", "review", target_agent="Orchestrator",
@@ -277,6 +310,9 @@ class WhyBot:
                         status="success" if final == "supported" else "rejected", confidence=v.strength,
                         data={"cid": v.cid, "verdict": final, "llm_verdict": v.verdict, "number_check": bool(ok_num)})
 
+            for hs in report.hypothesis_status:  # latest non-'untested' status wins across iterations
+                if hs.status != "untested" or hs.hypothesis_id not in hyp_status:
+                    hyp_status[hs.hypothesis_id] = hs
             decision = decide_next(it, self.s.max_iterations, report, checks, evidence, out_of_time=time.time() > deadline)
             tr.emit("Orchestrator", "branch", output_summary=f"{decision.action}: {decision.reason}",
                     target_agent={"retry": "Planner", "write": "Writer", "escalate": "Writer"}[decision.action],
@@ -319,7 +355,8 @@ class WhyBot:
                        "recommendation": final.recommendation, "claims": [c.model_dump() for c in final.claims],
                        "caveats": final.caveats, "confidence": final.confidence, "markdown": render_markdown(final, evidence, ds.label),
                        "recommendations": [final.recommendation], "artifacts": []},
-            "hypotheses": [{**h.model_dump(), "status": next((x.status for x in (report.hypothesis_status if report else []) if x.hypothesis_id == h.id), "untested")} for h in hypotheses.values()],
+            "hypotheses": [{**h.model_dump(), "status": hyp_status[h.id].status if h.id in hyp_status else "untested",
+                            "status_reason": hyp_status[h.id].reason if h.id in hyp_status else ""} for h in hypotheses.values()],
             "evidence": [e.to_dict() for e in evidence.values()],
             "iterations": tr.iteration,
             "data_source": {"label": ds.label, "kind": ds.kind},
@@ -342,7 +379,7 @@ class WhyBot:
                 break
             used = tables_in_sql(draft.sql, tables) or spec.tables
             try:
-                draft.sql = guard_sql(draft.sql)  # the exact SQL that runs is the SQL that is hashed and cited
+                draft.sql = guard_sql(draft.sql, allowed_tables=ds.allowed_tables())  # the exact SQL that runs is the SQL that is hashed and cited
             except DataSourceError:
                 pass  # ds.run() raises the same error below and the repair loop handles it
             h = sql_hash(draft.sql)
@@ -378,7 +415,7 @@ class WhyBot:
                         target_agent="Executor", data={"qid": qid, "sql_hash": h, "rows_head": res.rows[:5], "columns": res.columns})
                 continue
             ev.sql, ev.sql_hash, ev.tables = draft.sql, h, used
-            ev.columns, ev.rows, ev.row_count = res.columns, res.rows, len(res.rows)
+            ev.columns, ev.rows, ev.row_count, ev.truncated = res.columns, res.rows, len(res.rows), res.truncated
             ev.elapsed_s, ev.source_label, ev.recorded_at, ev.status = res.elapsed_s, res.source_label, res.recorded_at, "ok"
             ev.attempts.append({"sql": draft.sql, "sql_hash": h, "error": ""})
             tr.emit("Executor", "query_ok", target_agent="Analyst",
@@ -420,7 +457,10 @@ class WhyBot:
         ev.columns, ev.rows, ev.row_count, ev.source_label = res.columns, res.rows, len(res.rows), res.source_label
         evidence[ev.qid] = ev
         notes = []
-        for d, flag, name in res.rows:
+        for row in res.rows:
+            if len(row) < 3:
+                continue
+            d, flag, name = row[0], row[1], row[2]
             if (str(flag).upper() == "Y") != (name is not None):
                 notes.append(f"{d}: TPCDS date_dim.d_holiday={flag} but Nager.Date says "
                              f"{name + ' (national holiday)' if name else 'no national holiday'} [DQ1 {ev.sql_hash}]")
@@ -476,12 +516,13 @@ class WhyBot:
                                                        value={"statement": c.statement, "hypothesis": c.hypothesis_id, "qids": qids, "strength": v.strength},
                                                        table=ev.primary_table, sql_hash=",".join(evidence[q].sql_hash for q in qids), confidence=v.strength, kind="agent"))
 
-    def _fallback_report(self, claims: ClaimSet, checks) -> CriticReport:
+    def _fallback_report(self, claims: ClaimSet, checks, retry: bool = False) -> CriticReport:
         from .schemas import ClaimVerdict
         return CriticReport(
             verdicts=[ClaimVerdict(cid=c.cid, verdict="weak" if checks[c.cid].ok else "unsupported", strength=0.3,
                                    reason="deterministic check only") for c in claims.claims],
-            hypothesis_status=[], decision="insufficient_evidence", feedback="Critic unavailable; only number checks were applied.")
+            hypothesis_status=[], decision="retry" if retry else "insufficient_evidence",
+            feedback="Critic unavailable this iteration; only number checks were applied." + (" Retrying." if retry else ""))
 
     def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=()) -> FinalAnswer:
         sup_ids = set(decision.supported_cids)
@@ -496,8 +537,14 @@ class WhyBot:
         if dq_notes:
             hstat.append({"data_quality_notes (mention as caveats, NOT evidence)": list(dq_notes)})
 
+        verified_derived = []
+        for c in claims.claims:
+            if c.cid in sup_ids:
+                for d in c.derived:
+                    verified_derived.append(d.value)
+
         def validator(ans: FinalAnswer) -> list[str]:
-            probs = validate_final(ans, evidence, allowed)
+            probs = validate_final(ans, evidence, allowed, verified_derived)
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []
             return probs

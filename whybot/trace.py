@@ -27,6 +27,7 @@ class Tracer:
         self.run_id = run_id
         self.path = Path(logs_dir) / f"{run_id}.jsonl"
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self.path.write_text("")  # fresh trace per run: a reused run_id never appends to an old trace
         self.echo = echo
         self.seq = 0
         self.iteration = 0

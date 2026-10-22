@@ -22,18 +22,21 @@ def _num(v):
     return None
 
 
-def value_matches(claimed, actual, rel_tol: float = 0.01) -> bool:
+def value_matches(claimed, actual, rel_tol: float = 0.005) -> bool:
+    """Numbers match within rounding of the claimed precision or 0.5%; strings match exactly (case-insensitive).
+    A number never matches a string (no prefix tricks such as '2' vs '2024-02-13')."""
     a, b = _num(claimed), _num(actual)
     if a is not None and b is not None:
         if a == b:
             return True
-        # accept rounding to the precision the claim was written with
-        s = str(claimed)
-        decimals = len(s.split(".")[1]) if "." in s and _num(s) is not None else 0
-        if round(b, decimals) == round(a, decimals):
+        s_ = str(claimed).replace(",", "").rstrip("%")
+        decimals = len(s_.split(".")[1]) if "." in s_ else None
+        if decimals is not None and round(b, decimals) == round(a, decimals):
             return True
         return abs(a - b) <= rel_tol * max(abs(a), abs(b), 1e-9)
-    return str(claimed).strip().lower() == str(actual).strip().lower()[: len(str(claimed).strip())] and str(claimed).strip() != ""
+    if a is not None or b is not None:
+        return False
+    return str(claimed).strip().lower() == str(actual).strip().lower()
 
 
 @dataclass
@@ -66,11 +69,79 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence]) -> NumericC
             k, _, v = cv.row_hint.partition("=")
             ki = cols.get(k.strip().lower())
             if ki is not None:
-                sel = [r for r in rows if str(r[ki]).startswith(v.strip()) or value_matches(v.strip(), r[ki])]
-                rows = sel or rows
+                v = v.strip().strip("'\"")
+                rows = [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
+                if not rows:
+                    problems.append(f"{cv.qid}: no row matches {cv.row_hint}")
+                    continue
         if not any(value_matches(cv.value, r[idx]) for r in rows):
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
+    problems += check_derived_values(claim)
     return NumericCheck(claim.cid, not problems, problems)
+
+
+_PCT = re.compile(r"(?<![\w.])[-+]?(\d+(?:\.\d+)?)\s?%")
+_RATIO = re.compile(r"(?<![\w.])(\d+(?:\.\d+)?)\s?(?:x|×)(?![\w])", re.I)
+
+
+def eval_formula(formula: str, values: list[float]) -> float:
+    """Safely evaluate arithmetic over v1..vn with avg/sum/min/max/abs. Raises ValueError on anything else."""
+    import ast
+    import operator as op
+    env = {f"v{i + 1}": v for i, v in enumerate(values)}
+    funcs = {"avg": lambda *a: sum(a) / len(a), "sum": lambda *a: sum(a), "min": min, "max": max, "abs": abs}
+    ops = {ast.Add: op.add, ast.Sub: op.sub, ast.Mult: op.mul, ast.Div: op.truediv, ast.USub: op.neg, ast.UAdd: op.pos}
+
+    def ev(n):
+        if isinstance(n, ast.Expression):
+            return ev(n.body)
+        if isinstance(n, ast.Constant) and isinstance(n.value, (int, float)):
+            return float(n.value)
+        if isinstance(n, ast.Name) and n.id in env:
+            if env[n.id] is None:
+                raise ValueError(f"{n.id} is not numeric")
+            return env[n.id]
+        if isinstance(n, ast.BinOp) and type(n.op) in ops:
+            return ops[type(n.op)](ev(n.left), ev(n.right))
+        if isinstance(n, ast.UnaryOp) and type(n.op) in ops:
+            return ops[type(n.op)](ev(n.operand))
+        if isinstance(n, ast.Call) and isinstance(n.func, ast.Name) and n.func.id in funcs and not n.keywords:
+            return float(funcs[n.func.id](*[ev(a) for a in n.args]))
+        raise ValueError(f"unsupported expression: {ast.dump(n)[:80]}")
+    try:
+        return ev(ast.parse(formula.replace("×", "*"), mode="eval"))
+    except ZeroDivisionError as e:
+        raise ValueError("division by zero") from e
+    except SyntaxError as e:
+        raise ValueError(f"bad formula syntax: {formula}") from e
+
+
+def _close(stated: float, actual: float) -> bool:
+    return abs(abs(stated) - abs(actual)) <= 0.051 + 0.002 * abs(stated)
+
+
+def check_derived_values(claim: Claim) -> list[str]:
+    """Every derived value must re-evaluate from the cited cells, and every % or Nx ratio in the statement must be one
+    of the declared derived values (or a cited cell). Catches 'fell 49.5%' when the cells give 45.5%."""
+    nums = [_num(cv.value) for cv in claim.cited_values]
+    problems, ok_values = [], [abs(n) for n in nums if n is not None]
+    for d in claim.derived:
+        try:
+            actual = eval_formula(d.formula, nums)
+        except ValueError as e:
+            problems.append(f"derived {d.name}: {e}")
+            continue
+        if not _close(d.value, actual):
+            problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
+        else:
+            ok_values.append(abs(actual))
+    for p in [float(m) for m in _PCT.findall(claim.statement)]:
+        if not any(_close(p, v) for v in ok_values):
+            problems.append(f"{p:g}% in the statement is not recomputable from cited cells (declare it in derived with a formula)")
+    for r in [float(m) for m in _RATIO.findall(claim.statement)]:
+        if not any(_close(r, v) for v in ok_values):
+            problems.append(f"{r:g}x in the statement is not recomputable from cited cells (declare it in derived with a formula)")
+    return problems
 
 
 @dataclass
@@ -108,7 +179,7 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
     return Decision("escalate", "iteration cap or time budget reached without a supported explanation", supported)
 
 
-def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str]) -> list[str]:
+def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -127,6 +198,45 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                 problems.append(f"claim {i + 1}: sql_hash for {cit.qid} must be {ev.sql_hash}")
             if cit.table.lower() not in [t.lower() for t in ev.tables]:
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
+    problems += check_text_numbers(f"{ans.headline}\n{ans.answer}\n" + "\n".join(c.text for c in ans.claims),
+                                   evidence, allowed_qids, extra_values)
+    return problems
+
+
+_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+20\d\d)?\b"
+                      r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?\b|\b20\d\d\b", re.I)
+_NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k\b|%|x\b|×)?", re.I)
+
+
+def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=()) -> list[str]:
+    """Every number written in the final answer must be a cell of allowed evidence, a verified derived value, or a
+    percentage/ratio between two such cells (0.5 pp tolerance). Dates, years and small counts (<= 12) are exempt."""
+    pool = [abs(float(x)) for x in extra_values]
+    for q in allowed_qids:
+        ev = evidence.get(q)
+        if ev and ev.status == "ok":
+            for r in ev.rows:
+                pool += [abs(n) for n in (_num(v) for v in r) if n is not None]
+    pool = sorted(set(pool))[:400]
+    derived = set()
+    for i, a in enumerate(pool):
+        for b in pool:
+            if b and a != b:
+                derived.add(abs((a - b) / b * 100))
+                derived.add(a / b)
+    problems = []
+    for m in _NUM_RE.finditer(_DATE_RE.sub(" ", text)):
+        raw, suf = m.group(1), (m.group(2) or "").lower()
+        val = float(raw.replace(",", ""))
+        if suf == "k":
+            val *= 1000
+        if not suf and "." not in raw and val <= 12:
+            continue
+        cands = pool if suf in ("", "k") else list(pool) + list(derived)
+        tol = (lambda c: abs(val - c) <= max(0.51, 0.005 * val)) if suf in ("%", "x", "×") else \
+              (lambda c: abs(val - c) <= max(0.0051 * abs(c), 0.51 if "." not in raw else 0.0051) or (suf == "k" and abs(val - c) <= 500))
+        if not any(tol(c) for c in cands):
+            problems.append(f"the number '{m.group(0).strip()}' in the answer is not backed by cited evidence")
     return problems
 
 

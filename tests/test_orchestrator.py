@@ -74,7 +74,7 @@ def test_sql_repair_then_critic_retry_then_accept(settings):
 
 def test_escalates_to_insufficient_evidence_after_three_iterations(settings):
     llm = FakeLLM({
-        "planner": [PLAN, {**PLAN, "queries": [PLAN["queries"][0]]}],
+        "planner": [PLAN, {**PLAN, "queries": [PLAN["queries"][0]]}, {**PLAN, "queries": [PLAN["queries"][1]]}],
         "sql": [SQL_TRIPS, SQL_SNOW_OK],
         "analyst": [CLAIMS],
         "critic": [critic("retry", verdict="weak", hyp="inconclusive", follow=True)],
@@ -87,6 +87,8 @@ def test_escalates_to_insufficient_evidence_after_three_iterations(settings):
     assert res["iterations"] == 3
     acts = [e["action"] for e in events(res, settings)]
     assert "escalate" in acts and acts.count("plan") == 3
+    # iteration 2's first plan ignored the Critic's follow-up for H1 and was sent back to the Planner
+    assert any(e["action"] == "json_retry" and "follow-up test for H1" in e["output_summary"] for e in events(res, settings))
 
 
 def test_writer_bad_citation_is_retried_with_feedback(settings):
@@ -110,7 +112,7 @@ def test_failing_query_falls_back_and_run_continues(settings):
                    "writer": [writer_for([])]})
     res = WhyBot(settings, llm=llm, datasource=FakeSource(routes()), use_meterless=False, echo=False).run("why?")
     q2 = next(e for e in res["evidence"] if e["qid"] == "Q2")
-    assert q2["status"] == "failed" and len(q2["attempts"]) == 3
+    assert q2["status"] == "failed"  # repair re-proposed the identical SQL, which the SQL validator refuses
     assert "fallback" in [e["action"] for e in events(res, settings)]
     assert res["status"] == "insufficient_evidence"  # only H0 quantified, no cause supported
 
@@ -157,3 +159,19 @@ def test_holiday_data_quality_check_flags_disagreement_as_note(settings):
     notes = _WB(settings, datasource=ds, use_meterless=False)._holiday_dq_check("why 28 Nov 2024", p, [c["table"] for c in ds.catalog()], ds, tr, ev)
     assert len(notes) == 2 and "Thanksgiving" in notes[0] and "2024-12-31" in notes[1]
     assert ev["DQ1"].hypothesis_id == "data_quality"
+
+
+def test_invalid_run_id_is_rejected(settings):
+    import pytest
+    with pytest.raises(ValueError):
+        WhyBot(settings, llm=FakeLLM({}), datasource=FakeSource([]), use_meterless=False, echo=False).run("q", run_id="../escape")
+
+
+def test_reused_run_id_gets_a_fresh_trace(settings):
+    def bot():
+        llm = FakeLLM({"planner": [PLAN], "sql": [SQL_TRIPS, SQL_SNOW_OK], "analyst": [CLAIMS], "critic": [critic("accept")],
+                       "writer": [writer_for([("Q1", sql_hash(SQL_TRIPS["sql"] + " LIMIT 500"), "NY_TAXI.yellow_tripdata")])]})
+        return WhyBot(settings, llm=llm, datasource=FakeSource(routes()), use_meterless=False, echo=False)
+    bot().run("why?", run_id="same")
+    res = bot().run("why?", run_id="same")
+    assert sum(1 for e in events(res, settings) if e["action"] == "start") == 1

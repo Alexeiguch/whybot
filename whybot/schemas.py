@@ -44,12 +44,19 @@ class CitedValue(BaseModel):
     row_hint: str = Field(default="", description="column=value identifying the row, e.g. trip_date=2024-02-13")
 
 
+class DerivedValue(BaseModel):
+    name: str = Field(description="e.g. pct_change_vs_baseline")
+    value: float
+    formula: str = Field(description="Arithmetic over cited values v1..vn (1-based order of cited_values), + - * / ( ), avg(), sum(), min(), max(), abs(). e.g. (v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100")
+
+
 class Claim(BaseModel):
     cid: str
     hypothesis_id: str
     statement: str
     direction: Literal["supports", "refutes"]
     cited_values: list[CitedValue]
+    derived: list[DerivedValue] = Field(default=[], description="Every percentage/ratio/average used in the statement, with its formula")
 
 
 class ClaimSet(BaseModel):

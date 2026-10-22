@@ -1,9 +1,14 @@
 .venv
 **/node_modules
 data/dev
-.meterless
+.meterless*
 .env
 .env.*
 !.env.example
 logs/*.jsonl
+!logs/recorded-*.jsonl
+logs/*.log
 .git
+.pytest_cache
+**/__pycache__
+tests

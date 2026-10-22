@@ -1,10 +1,12 @@
 """LLM access. NVIDIA build (OpenAI-compatible) with Nemotron models, JSON outputs validated by pydantic, retried with feedback."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
 import time
+from datetime import datetime, timezone
 from typing import Any, Callable, Type, TypeVar
 
 from pydantic import BaseModel, ValidationError
@@ -61,14 +63,32 @@ def extract_json(text: str) -> Any:
     raise ValueError("unterminated JSON object in model output")
 
 
+def prompt_sha(messages: list[dict]) -> str:
+    return hashlib.sha256(json.dumps(messages, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 class BaseLLM:
-    """Subclasses implement chat(). complete_json() adds schema validation + retry-with-feedback."""
+    """Subclasses implement chat(). complete_json() adds schema validation, retry-with-feedback, back-off and the run deadline."""
 
     def __init__(self, on_call: Callable[[dict], None] | None = None):
         self.on_call = on_call
+        self.deadline: float | None = None   # wall-clock deadline of the current run (set by the orchestrator)
+        self.call_timeout_s: float = 90.0
 
     def model_for(self, role: str) -> str:
         return role
+
+    def _timeout(self) -> float:
+        if self.deadline is None:
+            return self.call_timeout_s
+        left = self.deadline - time.time()
+        if left < 5:
+            raise LLMError("run budget exhausted")
+        return min(self.call_timeout_s, left)
 
     def chat(self, role: str, messages: list[dict], *, max_tokens: int = 4096, temperature: float = 0.2) -> tuple[str, dict]:
         raise NotImplementedError
@@ -82,14 +102,21 @@ class BaseLLM:
         errors: list[str] = []
         meta: dict = {}
         for attempt in range(1, max_attempts + 1):
+            if self.deadline is not None and self.deadline - time.time() < 5:
+                raise LLMError(f"{role}: run budget exhausted")
             try:
                 raw, meta = self.chat(role, messages, max_tokens=max_tokens)
             except LLMError as e:
                 errors.append(str(e))
                 if self.on_call:
                     self.on_call({"role": role, "event": "llm_error_retry", "attempt": attempt, "error": str(e)[:300]})
+                if "budget exhausted" in str(e) or "cassette" in str(e):
+                    break
+                time.sleep(min(2 ** attempt, 8))   # back off on 429/5xx/timeouts
                 continue
             meta = {**meta, "attempt": attempt}
+            if meta.get("finish_reason") == "length":
+                max_tokens = int(max_tokens * 1.5)
             try:
                 obj = model_cls.model_validate(extract_json(raw))
                 problems = validator(obj) if validator else []
@@ -122,7 +149,8 @@ class NvidiaLLM(BaseLLM):
         if not key:
             raise LLMError("NVIDIA_API_KEY is not set")
         self.s = settings
-        self.client = OpenAI(base_url=settings.llm_base_url, api_key=key, timeout=settings.llm_timeout_s, max_retries=1)
+        self.call_timeout_s = settings.llm_timeout_s
+        self.client = OpenAI(base_url=settings.llm_base_url, api_key=key, timeout=settings.llm_timeout_s, max_retries=0)
         self.thinking_roles = {r.strip() for r in os.environ.get("LLM_THINKING_ROLES", "").split(",") if r.strip()}
 
     def model_for(self, role: str) -> str:
@@ -132,9 +160,10 @@ class NvidiaLLM(BaseLLM):
     def chat(self, role, messages, *, max_tokens=4096, temperature=0.2):
         model = self.model_for(role)
         thinking = role in self.thinking_roles
+        timeout = self._timeout()
         t0 = time.time()
         try:
-            r = self.client.chat.completions.create(
+            r = self.client.with_options(timeout=timeout).chat.completions.create(
                 model=model, messages=messages, temperature=temperature,
                 max_tokens=max_tokens + (8000 if thinking else 0),
                 extra_body={"chat_template_kwargs": {"enable_thinking": thinking}},
@@ -147,6 +176,7 @@ class NvidiaLLM(BaseLLM):
         meta = {"model": model, "latency_s": round(time.time() - t0, 2), "thinking": thinking,
                 "prompt_tokens": getattr(usage, "prompt_tokens", None),
                 "completion_tokens": getattr(usage, "completion_tokens", None),
+                "finish_reason": r.choices[0].finish_reason, "prompt_sha": prompt_sha(messages),
                 "reasoning_chars_stripped": len(getattr(msg, "reasoning_content", None) or "")}
         if self.on_call:
             self.on_call({"role": role, "event": "llm_call", **meta})
@@ -156,22 +186,27 @@ class NvidiaLLM(BaseLLM):
 
 
 class CassetteLLM(BaseLLM):
-    """Records (record=True, wraps a live LLM) or replays (record=False) the ordered LLM responses of one recorded run.
+    """Records (inner=live LLM) or replays (inner=None) the ordered LLM responses of one recorded LIVE run.
 
-    Used only for SAMPLE_MODE so a judge without an NVIDIA key can replay a recorded investigation end to end.
-    Replayed responses are labelled in the trace (model = 'cassette:<model>')."""
+    SAMPLE_MODE replays by default so a judge sees exactly the recorded investigation. Every replayed call carries the
+    original live metadata (model, latency, tokens, recorded_at, live run id) and prompt_match: whether today's prompt
+    hashes to the prompt that was sent live. Drift (code or prompt changes since recording) is reported, never hidden."""
 
-    def __init__(self, path, inner: BaseLLM | None = None, on_call=None):
+    def __init__(self, path, inner: BaseLLM | None = None, on_call=None, run_id: str | None = None):
         super().__init__(on_call)
         from pathlib import Path
         self.path = Path(path)
         self.inner = inner
+        self.run_id = run_id
         self.recorded: list[dict] = []
         self.queue: dict[str, list[dict]] = {}
+        self.header: dict = {}
         if inner is None:
             if not self.path.is_file():
                 raise LLMError(f"no LLM cassette at {self.path}")
-            for item in json.loads(self.path.read_text())["calls"]:
+            data = json.loads(self.path.read_text())
+            self.header = {k: v for k, v in data.items() if k != "calls"}
+            for item in data["calls"]:
                 self.queue.setdefault(item["role"], []).append(item)
 
     def model_for(self, role):
@@ -180,24 +215,31 @@ class CassetteLLM(BaseLLM):
     def chat(self, role, messages, *, max_tokens=4096, temperature=0.2):
         if self.inner is not None:
             self.inner.on_call = self.on_call
+            self.inner.deadline = self.deadline
             content, meta = self.inner.chat(role, messages, max_tokens=max_tokens, temperature=temperature)
-            self.recorded.append({"role": role, "content": content, "model": meta.get("model")})
+            self.recorded.append({"role": role, "content": content, "recorded_at": _now(), "prompt_sha": prompt_sha(messages),
+                                  **{k: meta.get(k) for k in ("model", "latency_s", "prompt_tokens", "completion_tokens", "finish_reason")}})
             return content, meta
         q = self.queue.get(role)
         if not q:
             raise LLMError(f"cassette exhausted for role {role}")
         item = q.pop(0)
-        meta = {"model": f"cassette:{item.get('model')}", "latency_s": 0.0, "replayed": True}
+        cur = prompt_sha(messages)
+        meta = {"model": f"replay:{item.get('model')}", "latency_s": 0.0, "replayed": True,
+                "recorded_at": item.get("recorded_at"), "live_run_id": self.header.get("live_run_id"),
+                "original_latency_s": item.get("latency_s"), "original_completion_tokens": item.get("completion_tokens"),
+                "original_prompt_tokens": item.get("prompt_tokens"), "prompt_sha": cur, "recorded_prompt_sha": item.get("prompt_sha"),
+                "prompt_match": cur == item.get("prompt_sha")}
         if self.on_call:
             self.on_call({"role": role, "event": "llm_call", **meta})
         return item["content"], meta
 
     def save(self, question: str):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self.path.write_text(json.dumps({"question": question, "calls": self.recorded}, indent=1))
+        self.path.write_text(json.dumps({"question": question, "live_run_id": self.run_id, "trace": f"logs/{self.run_id}.jsonl",
+                                         "recorded_at": _now(), "calls": self.recorded}, indent=1))
 
 
 def cassette_path(fixtures_dir, question: str):
-    import hashlib
     from pathlib import Path
     return Path(fixtures_dir) / "llm" / (hashlib.sha256(question.strip().lower().encode()).hexdigest()[:16] + ".json")

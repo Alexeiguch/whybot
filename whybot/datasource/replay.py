@@ -41,7 +41,7 @@ class ReplayDataSource(DataSource):
         return out
 
     def run(self, sql, timeout_s=60.0) -> QueryResult:
-        g = guard_sql(sql)
+        g = guard_sql(sql, allowed_tables=self.allowed_tables())
         fx = self._fx.get(sql_hash(g))
         if not fx:
             options = self.recorded_sql()[:8]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import re
 import threading
 from pathlib import Path
 
@@ -28,7 +29,14 @@ class ZetarisJDBCSource(DataSource):
     dialect_notes = (
         "Spark SQL functions: to_date(ts), date_format(d,'EEEE') for weekday name, dayofweek(d) returns 1=Sunday..7=Saturday, "
         "to_date(CAST(x AS STRING),'yyyyMMdd') for yyyymmdd integers, date_add/datediff, CASE WHEN. "
-        "Reference tables by their full two-part name exactly as listed under TABLES (e.g. NY_TAXI.taxi_zones). No semicolons. Prefer aggregated outputs (<200 rows)."
+        "Reference tables by their full two-part name exactly as listed under TABLES (e.g. whybot.yellow_daily). No semicolons. Prefer aggregated outputs (<200 rows). "
+        "ZETARIS QUIRKS (verified): (1) never read the same whybot.* view twice in one query (no self-joins, no two CTEs over the same view): "
+        "it fails with MISSING_ATTRIBUTES; compare target vs baseline with conditional aggregation instead, e.g. "
+        "MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN trips END) AS target_trips, AVG(CASE WHEN trip_date <> DATE '2024-11-28' THEN trips END) AS baseline_avg_trips, "
+        "or simply return one row per date. Joining two DIFFERENT views on the date key is fine. "
+        "(2) Compare dates with DATE 'yyyy-mm-dd' literals, never integers. date_add(d, n) takes 2 arguments. "
+        "(3) An error like \"mismatched input ... expecting {'ADD', 'ANALYZE', ...}\" or \"expecting 'METADATA'\" means the statement failed to parse or resolve: "
+        "simplify it, use only listed column names, and avoid short table aliases at the start of the select list."
     )
 
     def __init__(self, databases: list[str], tables: list[str] | None = None):
@@ -59,8 +67,15 @@ class ZetarisJDBCSource(DataSource):
         self._active = None
         self._catalog: list[dict] | None = None
 
+    LOCK_TIMEOUT_S = 120.0
+
+    def _acquire(self):
+        if not self._lock.acquire(timeout=self.LOCK_TIMEOUT_S):
+            raise DataSourceError("Zetaris session busy: a previous query is still running (lock timeout)")
+
     def _raw(self, sql: str) -> QueryResult:
-        with self._lock:
+        self._acquire()
+        try:
             cur = self._conn.cursor()
             self._active = cur
             try:
@@ -73,6 +88,8 @@ class ZetarisJDBCSource(DataSource):
                     cur.close()
                 except Exception:
                     pass
+        finally:
+            self._lock.release()
         return QueryResult(columns=cols, rows=rows[:500], source_label=self.label, meta={"rows_total": len(rows)})
 
     def _execute(self, sql: str) -> QueryResult:
@@ -109,6 +126,8 @@ class ZetarisJDBCSource(DataSource):
         return out
 
     def _columns(self, table: str) -> list[list[str]]:
+        if not re.match(r"^[A-Za-z_]\w*\.[A-Za-z_]\w*$", table):
+            return []
         try:
             res = self._raw(f"DESCRIBE DATASOURCE TABLE {table}")
             cols = [[str(r[0]), (str(r[1]) if len(r) > 1 else "").strip('"')] for r in res.rows if r and r[0] and not str(r[0]).startswith("#")]
@@ -117,12 +136,8 @@ class ZetarisJDBCSource(DataSource):
         except Exception:
             pass
         try:
-            with self._lock:
-                cur = self._conn.cursor()
-                cur.execute(f"SELECT * FROM {table} LIMIT 1")
-                cols = [[d[0], str(d[1])] for d in cur.description]
-                cur.close()
-            return cols
+            res = self._raw(f"SELECT * FROM {table} LIMIT 1")
+            return [[c, ""] for c in res.columns]
         except Exception:
             return []
 
