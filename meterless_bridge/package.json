@@ -1,0 +1,7 @@
+{
+  "name": "whybot-meterless-bridge",
+  "private": true,
+  "type": "module",
+  "description": "JSON-lines stdin/stdout bridge from Python to the Meterless TS reference engines (H-MEM, World Model, Markovian).",
+  "dependencies": { "tsx": "^4.20.0" }
+}

@@ -1,0 +1,7 @@
+{
+  "_doc": "Semantic notes per table, given to the Planner and SQL agent. Domain documentation, not answers.",
+  "NY_TAXI.yellow_tripdata": "NYC TLC yellow taxi trips, one row per trip. tpep_pickup_datetime is the event time; fare_amount/total_amount in USD; PULocationID/DOLocationID join NY_TAXI.taxi_zones.LocationID. Raw months contain a few out-of-range timestamps and negative fares (data-quality checks).",
+  "NY_TAXI.taxi_zones": "TLC zone lookup: LocationID, Borough, Zone, service_zone (Airports, Yellow Zone, Boro Zone, EWR).",
+  "NOAA_GHCN_S3.noaa_ghcn_daily_2024": "NOAA GHCN-Daily, long format: one row per station, day and element. ID=station (USW00094728 Central Park, USW00014732 LaGuardia, USW00094789 JFK), DATE=yyyymmdd integer, ELEMENT in PRCP (tenths of mm), SNOW (mm), SNWD (snow depth mm), TMAX/TMIN (tenths of deg C); DATA_VALUE holds the value. Always filter one station for city weather. In Zetaris a headerless CSV exposes columns as _c0.._c7 in this order.",
+  "HOLIDAYS.us_public_holidays_2024": "US public holidays 2024 from Nager.Date. is_nationwide=false means state-only (check counties for US-NY)."
+}

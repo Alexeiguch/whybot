@@ -1,0 +1,24 @@
+# secrets
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+# environments / deps
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.pyc
+.pytest_cache/
+# large / local data
+data/dev/
+*.parquet
+*.duckdb
+*.jar
+# runtime state
+.meterless/
+logs/*
+!logs/.gitkeep
+!logs/samples/

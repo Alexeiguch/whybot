@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>WhyBot — explain why a metric changed</title>
+<style>
+:root{--bg:#0f1117;--panel:#171a23;--line:#2a2f3d;--ink:#e6e8ee;--mute:#8b93a7;--ok:#3fb950;--bad:#f85149;--warn:#d29922;--acc:#76b900}
+*{box-sizing:border-box}body{margin:0;font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
+header{padding:14px 20px;border-bottom:1px solid var(--line);display:flex;gap:14px;align-items:center;flex-wrap:wrap}
+h1{font-size:18px;margin:0}h1 span{color:var(--acc)}#src{padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600;border:1px solid var(--line)}
+#src.live{color:var(--ok);border-color:var(--ok)}#src.recorded{color:var(--warn);border-color:var(--warn)}#src.dev{color:#fff;background:var(--bad)}
+form{display:flex;gap:8px;padding:14px 20px;flex-wrap:wrap}input[type=text]{flex:1;min-width:320px;padding:10px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--ink)}
+button,select{padding:9px 14px;border-radius:8px;border:1px solid var(--line);background:#222838;color:var(--ink);cursor:pointer}button.primary{background:var(--acc);color:#000;font-weight:700;border:0}
+#samples{padding:0 20px 8px;display:flex;gap:6px;flex-wrap:wrap}#samples button{font-size:12px;padding:5px 9px}
+main{display:grid;grid-template-columns:minmax(340px,1fr) 2fr;gap:14px;padding:0 20px 20px}
+section{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px;min-height:120px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:0 0 8px}
+#timeline{max-height:78vh;overflow:auto}.ev{border-left:3px solid var(--line);padding:4px 8px;margin:4px 0;font-size:12.5px}
+.ev b{font-weight:600}.ev .t{color:var(--mute);font-size:11px}.ev.error,.ev.rejected{border-color:var(--bad)}.ev.retry,.ev.fallback,.ev.escalated{border-color:var(--warn)}
+.ev.success{border-color:var(--ok)}.ev.info{border-color:#3b4256;opacity:.75}
+.ag{display:inline-block;min-width:78px;font-size:11px;padding:1px 6px;border-radius:4px;margin-right:4px;text-align:center;color:#000}
+.Planner{background:#79c0ff}.Executor{background:#d2a8ff}.Analyst{background:#ffa657}.Critic{background:#ff7b72}.Writer{background:#7ee787}.Memory{background:#e3b341}.Orchestrator{background:#c9d1d9}
+table{width:100%;border-collapse:collapse;font-size:12.5px}th,td{border-bottom:1px solid var(--line);padding:5px;text-align:left;vertical-align:top}
+td code{font-size:11.5px;color:var(--mute)}tr.failed td{color:var(--bad)}tr.hl{background:#24304a}details pre{white-space:pre-wrap;font-size:11.5px;background:#0b0d12;padding:6px;border-radius:6px;max-height:240px;overflow:auto}
+#answer h3{margin:4px 0 8px;font-size:17px}.cite{display:inline-block;font-size:11px;background:#24304a;border-radius:4px;padding:1px 5px;margin:1px;cursor:pointer;color:#a5d6ff}
+.status{font-weight:700}.status.answered{color:var(--ok)}.status.insufficient_evidence{color:var(--warn)}.status.error{color:var(--bad)}
+.hyp{font-size:12.5px;margin:3px 0}.pill{font-size:11px;padding:1px 6px;border-radius:8px;border:1px solid var(--line)}.pill.supported{color:var(--ok)}.pill.refuted{color:var(--bad)}.pill.inconclusive,.pill.untested{color:var(--mute)}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>Why<span>Bot</span></h1><span style="color:var(--mute)">Planner → Executor → Analyst → Critic ⟲ → Writer · Zetaris · Meterless · NVIDIA Nemotron</span><span id="src">source: ?</span></header>
+<form id="f"><input type="text" id="q" placeholder="Ask a bounded 'why did X change' question…" required>
+<select id="mode"><option value="">server default source</option><option value="sample">SAMPLE_MODE (recorded Zetaris)</option><option value="zetaris">live Zetaris</option><option value="dev">dev-only DuckDB</option></select>
+<button class="primary">Investigate</button></form>
+<div id="samples"></div>
+<main>
+<section><h2>Agent timeline (live)</h2><div id="timeline"></div></section>
+<div style="display:grid;gap:14px">
+<section id="answer"><h2>Cited answer</h2><div id="ans" style="color:var(--mute)">Run an investigation to see the answer.</div></section>
+<section><h2>Hypotheses</h2><div id="hyps"></div></section>
+<section><h2>Evidence table</h2><table><thead><tr><th>Query</th><th>Hyp.</th><th>Table</th><th>SQL hash</th><th>Rows</th><th>Status</th></tr></thead><tbody id="evb"></tbody></table></section>
+</div></main>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let evidence={};
+fetch('/samples').then(r=>r.json()).then(xs=>xs.forEach(x=>{const b=document.createElement('button');b.type='button';b.textContent=x.input.query.slice(0,70)+'…';b.onclick=()=>{$('#q').value=x.input.query};$('#samples').append(b)}));
+fetch('/health').then(r=>r.json()).then(h=>setSrc(h.sample_mode?'recorded':(h.data_source==='dev'?'dev':'live'),'server default: '+h.data_source));
+function setSrc(kind,label){const e=$('#src');e.className=kind;e.textContent=label}
+function addEv(ev){
+  const d=document.createElement('div');d.className='ev '+ev.status;
+  d.innerHTML=`<span class="t">${ev.elapsed_s}s · it${ev.iteration}</span> <span class="ag ${ev.agent_name}">${ev.agent_name}</span><b>${esc(ev.action)}</b>${ev.target_agent?' → '+esc(ev.target_agent):''}${ev.retry_count?` <span class="pill">retry ${ev.retry_count}</span>`:''}<div>${esc(ev.output_summary)}</div>`;
+  if(ev.data&&ev.data.sql){d.innerHTML+=`<details><summary>SQL ${esc(ev.data.sql_hash)}</summary><pre>${esc(ev.data.sql)}</pre></details>`}
+  $('#timeline').append(d);$('#timeline').scrollTop=1e9;
+  if(ev.action==='datasource'){const k=ev.data.kind;setSrc(k==='live'?'live':k,ev.output_summary)}
+  if(ev.action==='query_ok'||ev.action==='fallback'&&ev.data.qid){renderEvRow(ev)}
+}
+function renderEvRow(ev){const q=ev.data.qid;evidence[q]=evidence[q]||{};Object.assign(evidence[q],ev.data,{status:ev.action==='query_ok'?'ok':'failed'});drawEv()}
+function drawEv(list){
+  const rows=list||Object.entries(evidence).map(([qid,e])=>({qid,hypothesis_id:e.hypothesis_id||'',tables:e.tables||[],sql_hash:e.sql_hash||'',row_count:e.row_count,status:e.status,columns:e.columns||[],rows:e.rows_head||[],sql:e.sql||''}));
+  $('#evb').innerHTML=rows.map(e=>`<tr id="ev-${e.qid}" class="${e.status}"><td><b>${e.qid}</b><details><summary>result</summary><pre>${esc((e.columns||[]).join(' | '))}\n${esc((e.rows||[]).slice(0,25).map(r=>r.join(' | ')).join('\n'))}</pre><pre>${esc(e.sql)}</pre></details></td><td>${esc(e.hypothesis_id)}</td><td>${esc((e.tables||[]).join(', '))}</td><td><code>${esc(e.sql_hash)}</code></td><td>${e.row_count??''}</td><td>${esc(e.status)}${e.source_label?`<div><code>${esc(e.source_label)}</code></div>`:''}</td></tr>`).join('');
+}
+function hl(q){document.querySelectorAll('tr.hl').forEach(t=>t.classList.remove('hl'));const r=document.getElementById('ev-'+q);if(r){r.classList.add('hl');r.scrollIntoView({block:'center'})}}
+function showResult(r){
+  if(r.status==='error'){$('#ans').innerHTML=`<div class="status error">error</div><pre>${esc(JSON.stringify(r.error,null,1))}</pre>`;return}
+  const o=r.output;
+  $('#ans').innerHTML=`<div class="status ${r.status}">${r.status.replace('_',' ')} · confidence ${(o.confidence||0).toFixed(2)} · ${r.execution_time_seconds}s · ${r.iterations} iteration(s)</div><h3>${esc(o.headline)}</h3><p>${esc(o.answer)}</p><p><b>Recommendation:</b> ${esc(o.recommendation)}</p><ol>${o.claims.map(c=>`<li>${esc(c.text)} ${c.citations.map(x=>`<span class="cite" onclick="hl('${x.qid}')">${esc(x.qid)} · ${esc(x.sql_hash)} · ${esc(x.table)}</span>`).join('')}</li>`).join('')}</ol>${o.caveats.length?`<b>Caveats</b><ul>${o.caveats.map(c=>`<li>${esc(c)}</li>`).join('')}</ul>`:''}<div style="color:var(--mute);font-size:12px">Data source: ${esc(r.data_source.label)} · trace: ${esc(r.log_file)}</div>`;
+  $('#hyps').innerHTML=(r.hypotheses||[]).map(h=>`<div class="hyp"><b>${esc(h.id)}</b> <span class="pill">${esc(h.kind)}</span> <span class="pill ${h.status}">${esc(h.status)}</span> ${esc(h.statement)}</div>`).join('');
+  drawEv(r.evidence);
+}
+$('#f').onsubmit=async e=>{e.preventDefault();$('#timeline').innerHTML='';$('#evb').innerHTML='';$('#hyps').innerHTML='';evidence={};$('#ans').textContent='Investigating…';
+  const m=$('#mode').value, options=m==='sample'?{sample_mode:true}:(m?{data_source:m}:{});
+  const r=await fetch('/runs',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({input:{query:$('#q').value},options})}).then(r=>r.json());
+  const es=new EventSource(r.events);es.addEventListener('trace',m=>addEv(JSON.parse(m.data)));es.addEventListener('result',m=>{showResult(JSON.parse(m.data));es.close()});};
+</script></body></html>
