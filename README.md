@@ -145,11 +145,11 @@ docker run --rm -p 8000:8000 -e SAMPLE_MODE=true whybot       # recorded replay,
 
 | # | Result | Live wall clock | What happened |
 |---|---|---|---|
-| 1 | **answered**: "Yellow taxi trips plummeted 45.5% on Thanksgiving 2024, driven by holiday demand collapse." | 253 s, 1 iteration | 77,244 trips against a mean of 141,603 on the three prior Thursdays. The Critic rejected the rain claim and a fare-mix claim whose cited rows did not exist, so the answer rests on Thanksgiving (Nager.Date). The `d_holiday` data-quality caveat is rendered from DQ1. |
+| 1 | **answered**: "NYC yellow taxi trips dropped 45.5% on Thanksgiving Thursday 28 Nov 2024" | 291 s, 1 iteration | 77,244 trips against a mean of 141,603 on the other November 2024 Thursdays, with Thanksgiving (Nager.Date) as the driver and the 21.8 mm of rain as a contributing factor. Average fare fell to $25.32 and average distance rose, a shift in trip mix. The `d_holiday` data-quality caveat is rendered from DQ1, and no claim says the weather was mild or that there were no data-quality flags. |
 | 2 | **answered**: "Saturday 21 Dec 2024 taxi trips were essentially unchanged despite heavy snowfall" | 431 s, 2 iterations | **Critic REJECT → retry → changed answer.** At trace seq 77 the Critic rejects the claim that the 46 mm of snow "suppressed taxi demand", because H0 shows +0.15%. Seq 80 branches back to the Planner, and the iteration-2 answer refutes the question's premise. |
 | 3 | **insufficient_evidence**: "Average fare jumped 36.5% on MLK Day, but root cause remains unclear" | 752 s, 3 iterations | The jump and the holiday are confirmed. Weather and distance-mix claims are rejected as weak, and zone mix cannot be tested on the daily view, so the run escalates honestly. **H-MEM recall** (seq 6) returns 5 memories from the sample #2 investigation (top relevance 0.29). |
 
-Samples #2 and #3 were recorded in that order on the final agent code, sharing one Meterless store, so #3's recall of #2 is real. Sample #1 was recorded at commit `0d7c31c`; later changes are prompt wording and post-processing, and its replay passes on the final code. `SAMPLE_MODE` replays of all three take under 1 s each and reproduce the same headline and answer (`tests/test_sample_mode_e2e.py`).
+All three samples were recorded live against Zetaris on the final agent code (#2, then #3, then #1, sharing one Meterless store, so the later runs' recall of earlier ones is real). Every replayed LLM call hashes to the same prompt as the live call (`prompt_match` is true for all of them). `SAMPLE_MODE` replays of all three take under 1 s each and reproduce the same headline and answer (`tests/test_sample_mode_e2e.py`).
 
 `output_examples/` holds the full JSON results of these runs and `logs/recorded-*.jsonl` their traces. `logs/samples/DEV-ONLY-*` is an early trace from the dev stand-in.
 
@@ -190,4 +190,15 @@ None. All WhyBot code was written during the hackathon, starting 22 Oct 2026. Op
 - The **Zetaris getting-started** repo (github.com/zetaris/getting-started), used as documentation and the source of the NOAA filestore recipe. It is not vendored.
 - The Python and Node libraries listed in `requirements.txt` and `meterless_bridge/package.json`.
 
-Data: NYC TLC trip records (public), NOAA GHCN-Daily (CC0), Nager.Date holidays (public API). Only download scripts are in the repo, not the data.
+## Data sources and terms
+
+Only download scripts are in the repo, not the data. Each source keeps its own terms:
+
+- **NYC TLC Trip Record Data** (yellow taxi trips): public data published by the NYC Taxi and Limousine Commission at [nyc.gov/tlc](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page) and on NYC Open Data. The TLC notes that the trip data was collected by authorized technology providers and makes no representations as to its accuracy.
+- **NOAA GHCN-Daily** (Central Park daily weather): a US government dataset from NOAA NCEI ([doi:10.7289/V5D21VHZ](https://doi.org/10.7289/V5D21VHZ)). NOAA open data is in the public domain, made available under [CC0-1.0](https://creativecommons.org/publicdomain/zero/1.0/) with no restrictions on use; NOAA asks for attribution and that no NOAA endorsement is implied.
+- **Nager.Date** (US public holidays): the open public holiday API at [date.nager.at](https://date.nager.at), an open-source project released under the [MIT License](https://github.com/nager/Nager.Date/blob/main/LICENSE).
+- **TPC-DS `date_dim`**: the TPC-DS benchmark calendar table (S3 Parquet in the Zetaris sandbox, `TPCDS_DB`). Its `d_holiday` flag is synthetic, so it is used only for the data-quality cross-check.
+
+## License
+
+WhyBot is released under the [MIT License](LICENSE), copyright (c) 2026 Alexei Guchin Corominas. Vendored third-party code keeps its own licence (Meterless: Apache-2.0, see `vendor/meterless/`).
