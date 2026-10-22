@@ -155,8 +155,8 @@ class Analyst:
                 for cv in c.cited_values:
                     if cv.qid not in ev_ids:
                         errs.append(f"{c.cid} cites unknown {cv.qid}")
-            if errs or rounds["n"] >= 2:
-                return errs  # one self-repair round; after that the Critic's own number check decides
+            if errs or rounds["n"] >= 3:
+                return errs  # two self-repair rounds; after that the Critic's own number check decides
             for c in cs.claims:
                 ch = check_claim_numbers(c.model_copy(deep=True), ev_map)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]

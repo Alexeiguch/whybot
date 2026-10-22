@@ -217,3 +217,8 @@ def test_placeholders_are_filled_by_the_evaluator():
     assert check_derived_values(c) == [] and c.statement == "Trips fell 45.5% vs the baseline average"
     c2 = _claim_txt("Trips fell {nope}%", VALS)
     assert check_derived_values(c2)
+
+
+def test_boolean_flags_match_across_encodings():
+    assert value_matches("True", 1) and value_matches("False", 0) and value_matches(True, "true") and value_matches("Y", 1)
+    assert not value_matches("True", 0) and not value_matches("2", "2024-02-13")

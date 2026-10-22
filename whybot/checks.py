@@ -22,7 +22,23 @@ def _num(v):
     return None
 
 
+_BOOL = {"true": 1.0, "false": 0.0, "yes": 1.0, "no": 0.0, "y": 1.0, "n": 0.0}
+
+
+def _boolish(v):
+    if isinstance(v, bool):
+        return float(v)
+    if isinstance(v, str) and v.strip().lower() in _BOOL:
+        return _BOOL[v.strip().lower()]
+    if isinstance(v, (int, float)) and v in (0, 1):
+        return float(v)
+    return None
+
+
 def value_matches(claimed, actual, rel_tol: float = 0.005) -> bool:
+    ba, bb = _boolish(claimed), _boolish(actual)
+    if ba is not None and bb is not None and (isinstance(claimed, (bool, str)) or isinstance(actual, (bool, str))):
+        return ba == bb  # True / 'true' / 'Y' / 1 are the same flag
     """Numbers match within rounding of the claimed precision or 0.5%; strings match exactly (case-insensitive).
     A number never matches a string (no prefix tricks such as '2' vs '2024-02-13')."""
     a, b = _num(claimed), _num(actual)
@@ -236,7 +252,7 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                 problems.append(f"claim {i + 1}: {cit.qid} is not a successful query")
                 continue
             if cit.qid not in allowed_qids:
-                problems.append(f"claim {i + 1}: {cit.qid} was not used by any critic-supported claim")
+                problems.append(f"claim {i + 1}: {cit.qid} was not used by any critic-supported claim (you may cite only: {', '.join(sorted(allowed_qids)) or 'none'}; drop or rewrite this claim)")
             if cit.sql_hash != ev.sql_hash:
                 problems.append(f"claim {i + 1}: sql_hash for {cit.qid} must be {ev.sql_hash}")
             if cit.table.lower() not in [t.lower() for t in ev.tables]:
