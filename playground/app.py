@@ -14,39 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import gradio as gr  # noqa: E402
 
-from playground import core  # noqa: E402
+from playground import core, theme  # noqa: E402
 
 CUSTOM = "✎ Type my own question below"
 EV_HEADERS = ["qid", "hypothesis", "status", "source table(s)", "sql_hash", "rows", "provenance", "recorded_at", "preview"]
 
-CSS = """
-.pg-banner{border-radius:10px;padding:10px 14px;margin:2px 0 6px 0;border:2px solid}
-.pg-banner .head{font-weight:800;font-size:1.05em;letter-spacing:.02em}
-.pg-banner .sub,.pg-banner .ds{font-size:.88em;margin-top:2px}
-.pg-banner.rec{background:#fff8db;border-color:#e0b100;color:#4a3b00}
-.pg-banner.live{background:#e5f8ea;border-color:#22a447;color:#0d3d1b}
-.pg-banner.mixed{background:#e8f1ff;border-color:#3b7be0;color:#0f2a55}
-.pg-banner.idle{background:#f3f4f6;border-color:#c9ccd1;color:#333}
-.warnline{color:#a35200}
-.tl{max-height:640px;overflow:auto;border:1px solid #ddd;border-radius:8px}
-.tl table{width:100%;border-collapse:collapse;font-size:12.5px}
-.tl td{padding:3px 6px;border-bottom:1px solid #eee;vertical-align:top}
-.tl table{table-layout:fixed}.tl td.t{color:#888;white-space:nowrap;width:46px;font-size:11px}.tl td:nth-child(2){width:92px}
-.tl .act{font-family:monospace;font-weight:600}.tl .sum{color:#333;word-break:break-word;font-size:12px}
-.tl tr.bad{background:#fdecec}.tl tr.warn{background:#fff4e0}.tl tr.dim{opacity:.55}
-.pill{display:inline-block;border-radius:9px;padding:0 7px;font-size:11px;font-weight:700;color:#fff;background:#888}
-.pill.ok{background:#22a447}.pill.bad{background:#d93025}.pill.warn{background:#e8890c}.pill.muted{background:#8a8f98}
-.ag{font-weight:700;font-size:11.5px;border-radius:5px;padding:0 5px;background:#eef}
-.ag-Planner{background:#e9e3ff}.ag-Executor{background:#dff1ff}.ag-Analyst{background:#e6f7ea}.ag-Critic{background:#ffe5e0}
-.ag-Writer{background:#fff1cc}.ag-Memory{background:#eeeeee}.ag-Orchestrator{background:#f2f2f2}
-.step{border:1px solid #ddd;border-radius:8px;padding:6px 8px;margin-bottom:8px}
-.step pre{white-space:pre-wrap;font-size:12px;background:#f7f7f9;padding:6px;border-radius:6px;margin:2px 0}
-.small{font-size:11.5px;color:#555}.badtxt{color:#c62828}
-.cv{padding:5px 8px;border-left:4px solid #ccc;margin:4px 0;font-size:13px;border-radius:4px}
-.cv.ok{border-color:#22a447;background:#f1fbf3}.cv.bad{border-color:#d93025;background:#fdecec;font-weight:600}
-.cv.warn{border-color:#e8890c;background:#fff4e0}.cv.branch{font-weight:700}
-.empty{color:#888;padding:14px;font-style:italic}.hint{color:#999;font-size:11px;text-align:right}
-"""
 
 
 def _choices() -> list[str]:
@@ -73,8 +45,12 @@ def fixture_md() -> str:
 
 
 def idle_banner() -> str:
-    return ("<div class='pg-banner idle'><div class='head'>Ready</div><div class='sub'>Replay shows a <b>RECORDED</b> real run "
+    return ("<div class='pg-banner idle' role='status'><div class='head'>● Ready</div><div class='sub'>Replay shows a <b>RECORDED</b> real run "
             "(no keys). Live calls NVIDIA Nemotron with your key.</div></div>")
+
+
+ANSWER_EMPTY = ("### The cited answer appears here\n\n_Pick a question and press **Investigate**. When the Writer finishes, "
+                "the headline, recommendation and every claim with its `[query id · SQL hash · table]` citation show up in this card._")
 
 
 def investigate(choice, custom_q, mode, api_key, pacing):
@@ -84,7 +60,7 @@ def investigate(choice, custom_q, mode, api_key, pacing):
 
     def frame():
         return (view.banner() if view.events else idle_banner(), view.timeline(), view.hypotheses(), view.sql_steps(),
-                view.critic(), gr.update(value=view.evidence_rows() or None), view.answer(), view.write_trace())
+                view.critic(), gr.update(value=view.evidence_rows() or None), view.answer() or ANSWER_EMPTY, view.write_trace())
 
     if len(question) < 5:
         view.notice = "**Pick a sample question, or type a question of at least 5 characters.**"
@@ -119,13 +95,17 @@ def investigate(choice, custom_q, mode, api_key, pacing):
         yield frame()
 
 
+THEME = theme.build_theme()
+_EMPTY = core.RunView("replay", "", "")
+
+
 def build() -> gr.Blocks:
     with gr.Blocks(title="WhyBot Playground") as demo:
         gr.Markdown("# WhyBot Playground\n**Why did the number move?** A Planner, Executor, Analyst, Critic and Writer investigate "
                     "with SQL federated through **Zetaris**, memory from **Meterless**, and reasoning by **NVIDIA Nemotron**. "
-                    "Every claim cites its query id, SQL hash and source table.")
-        with gr.Row():
-            with gr.Column(scale=1, min_width=320):
+                    "Every claim cites its query id, SQL hash and source table.", elem_id="pg-title")
+        with gr.Row(equal_height=False):
+            with gr.Column(scale=1, min_width=300):
                 choices = _choices()
                 q = gr.Dropdown(choices, value=choices[0], label="Question", allow_custom_value=False)
                 custom = gr.Textbox(label="Your own question", placeholder="Why did NYC yellow taxi trips drop on …?",
@@ -137,25 +117,25 @@ def build() -> gr.Blocks:
                 pacing = gr.Slider(0, 0.5, value=0.08, step=0.02, label="Replay pacing (s per event)",
                                    info="Replays finish in seconds; slow them down to watch the agents.")
                 run = gr.Button("Investigate", variant="primary")
-                status = gr.Markdown(fixture_md())
+                status = gr.Markdown(fixture_md(), elem_id="fixture-status")
                 refresh = gr.Button("Re-check recorded runs", size="sm")
-                trace = gr.File(label="Download the JSONL trace", interactive=False)
-                gr.Markdown("API: `POST /run`, `POST /runs` + SSE, see `docs/api.md`. Built-in UI on port 8000.")
+                trace = gr.File(label="Download the JSONL trace", interactive=False, height=110)
+                gr.Markdown("API: `POST /run`, `POST /runs` + SSE, see `docs/api.md`. Built-in UI on port 8000.", elem_id="pg-footnote")
             with gr.Column(scale=3):
                 banner = gr.HTML(idle_banner())
-                answer = gr.Markdown()
+                answer = gr.Markdown(ANSWER_EMPTY, elem_id="answer-card")
                 with gr.Row():
-                    with gr.Column(scale=5):
-                        gr.Markdown("#### Agent timeline")
-                        timeline = gr.HTML(core.RunView("replay", "", "").timeline())
-                    with gr.Column(scale=6):
+                    with gr.Column(scale=5, min_width=340):
+                        gr.HTML("<div class='pg-h'>Agent timeline</div>")
+                        timeline = gr.HTML(_EMPTY.timeline())
+                    with gr.Column(scale=6, min_width=340):
                         with gr.Tabs():
                             with gr.Tab("Critic"):
-                                critic = gr.HTML()
+                                critic = gr.HTML(_EMPTY.critic())
                             with gr.Tab("Hypotheses"):
-                                hyps = gr.HTML()
+                                hyps = gr.HTML(_EMPTY.hypotheses())
                             with gr.Tab("SQL steps"):
-                                sql = gr.HTML()
+                                sql = gr.HTML(_EMPTY.sql_steps())
                             with gr.Tab("Evidence"):
                                 evidence = gr.Dataframe(headers=EV_HEADERS, wrap=True, interactive=False)
 
@@ -190,7 +170,8 @@ def main():
     demo.queue(default_concurrency_limit=4)
     demo.launch(server_name=os.environ.get("GRADIO_SERVER_NAME", "127.0.0.1"),
                 server_port=int(os.environ.get("GRADIO_SERVER_PORT", "7860")),
-                allowed_paths=[str(core.TRACE_DIR)], show_error=False, css=CSS)
+                allowed_paths=[str(core.TRACE_DIR)], show_error=False,
+                theme=THEME, css=theme.css(), js=theme.FORCE_DARK_JS)
 
 
 if __name__ == "__main__":

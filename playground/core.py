@@ -233,7 +233,7 @@ def stream_live(question: str, run_id: str, api_key: str):
 
 # ---------------------------------------------------------------- state + rendering
 
-STATUS_CLASS = {"rejected": "bad", "error": "bad", "retry": "warn", "escalated": "warn", "fallback": "warn",
+STATUS_CLASS = {"rejected": "bad", "error": "bad", "retry": "retry", "escalated": "warn", "fallback": "warn",
                 "success": "ok", "info": "muted"}
 
 
@@ -281,19 +281,23 @@ class RunView:
             act = e.get("action", "")
             if act in ("llm_call", "world_model.assert_fact", "meterless_store"):
                 cls += " dim"
-            tag = st.upper() if st in ("rejected", "error", "retry", "escalated", "fallback") else ""
-            if act == "verdict" and (e.get("data") or {}).get("verdict") != "supported":
-                tag = "REJECT" if (e.get("data") or {}).get("verdict") == "unsupported" else (e.get("data") or {}).get("verdict", "").upper()
+            tag = {"rejected": "✕ REJECTED", "error": "✕ ERROR", "retry": "↻ RETRY", "escalated": "⚠ ESCALATED",
+                   "fallback": "⚠ FALLBACK"}.get(st, "")
+            pcls = STATUS_CLASS.get(st, "")
+            if act == "verdict":
+                v = (e.get("data") or {}).get("verdict", "")
+                tag, pcls = VERDICT_TAG.get(v, ("✕ REJECT", "bad"))
+                cls = {"ok": "", "warn": "warn", "bad": "bad"}[pcls]
             if act == "branch" and st == "retry":
-                tag = "RETRY → Planner"
-            pill = f"<span class='pill {STATUS_CLASS.get(st, '')}'>{_e(tag)}</span>" if tag else ""
+                tag = "↻ RETRY → Planner"
+            pill = f"<span class='pill {pcls}'>{_e(tag)}</span>" if tag else ""
             tgt = f" → {_e(e['target_agent'])}" if e.get("target_agent") else ""
             rows.append(f"<tr class='{cls}'><td class='t'>{e.get('elapsed_s', '')}s<br>it{e.get('iteration', 0)}</td>"
                         f"<td><span class='ag ag-{_e(e.get('agent_name', ''))}'>{_e(e.get('agent_name', ''))}</span></td>"
                         f"<td><div class='act'>{_e(act)}{tgt} {pill}</div><div class='sum'>{_e(str(e.get('output_summary', ''))[:320])}</div></td></tr>")
         if not rows:
             return "<div class='empty'>Pick a question and press <b>Investigate</b>. The agent timeline streams here.</div>"
-        return f"<div class='tl'><table>{''.join(reversed(rows))}</table></div><div class='hint'>newest first · {len(rows)} events</div>"
+        return f"<div class='tl' role='log' aria-label='Agent timeline'><table>{''.join(reversed(rows))}</table></div><div class='hint'>newest first · {len(rows)} events</div>"
 
     def hypotheses(self) -> str:
         plans = [e for e in self.events if e.get("action") == "plan"]
@@ -308,12 +312,12 @@ class RunView:
             for h in plan.get("hypotheses") or []:
                 fh = final.get(h.get("id"), {})
                 st = fh.get("status", "")
-                pill = f"<span class='pill {_hyp_cls(st)}'>{_e(st.upper())}</span>" if st else ""
+                pill = f"<span class='pill {_hyp_cls(st)}'>{_e(HYP_ICON.get(st, '') + st.upper())}</span>" if st else ""
                 out.append(f"<li><b>{_e(h.get('id'))}</b> <i>{_e(h.get('kind', ''))}</i> {pill} {_e(h.get('statement', ''))}"
                            f"<div class='small'>supports if: {_e(h.get('support_if', ''))} · refutes if: {_e(h.get('refute_if', ''))}</div>"
                            f"{'<div class=small>' + _e(fh.get('status_reason', '')) + '</div>' if fh.get('status_reason') else ''}</li>")
             out.append("</ul>")
-        return "".join(out)
+        return "<div class='pg-panel'>" + "".join(out) + "</div>"
 
     def sql_steps(self) -> str:
         by: dict[str, dict] = {}
@@ -343,8 +347,8 @@ class RunView:
             return "<div class='empty'>Each SQL step, the table it reads and every repair attempt appear here.</div>"
         out = []
         for qid, s in by.items():
-            out.append(f"<div class='step'><div class='sh'><b>{_e(qid)}</b> · {_e(s['hyp'])} · iteration {s['it']} · "
-                       f"tables <code>{_e(', '.join(s['tables']))}</code> <span class='pill {_q_cls(s['status'])}'>{_e(s['status'].upper())}</span></div>")
+            out.append(f"<div class='step'><div class='sh'><code>{_e(qid)}</code> · {_e(s['hyp'])} · iteration {s['it']} · "
+                       f"tables <code>{_e(', '.join(s['tables']))}</code> <span class='pill {_q_cls(s['status'])}'>{_e(Q_ICON.get(s['status'], '') + s['status'].upper())}</span></div>")
             for i, a in enumerate(s["attempts"]):
                 lab = "repair " + str(i) if i else "attempt"
                 out.append(f"<div class='att'><div class='small'>{lab} · <code>{_e(a['hash'])}</code></div><pre>{_e(a['sql'])}</pre>"
@@ -358,21 +362,20 @@ class RunView:
             act, d, st = e.get("action"), e.get("data") or {}, e.get("status")
             if act == "number_check":
                 cls = "ok" if st == "success" else "bad"
-                lab = "PASS" if st == "success" else "REJECT"
+                lab = "✓ PASS" if st == "success" else "✕ REJECT"
                 out.append(f"<div class='cv {cls}'><span class='pill {cls}'>{lab}</span> number check · {_e(e.get('output_summary', ''))}</div>")
             elif act == "verdict":
                 v = d.get("verdict", "")
-                cls = {"supported": "ok", "weak": "warn"}.get(v, "bad")
-                lab = {"supported": "SUPPORTED", "weak": "WEAK"}.get(v, "REJECT")
+                lab, cls = VERDICT_TAG.get(v, ("✕ REJECT", "bad"))
                 out.append(f"<div class='cv {cls}'><span class='pill {cls}'>{lab}</span> it{e.get('iteration')} · {_e(e.get('output_summary', ''))}</div>")
             elif act == "data_quality_check":
-                out.append(f"<div class='cv warn'><span class='pill warn'>DATA QUALITY</span> {_e(e.get('output_summary', ''))}</div>")
+                out.append(f"<div class='cv warn'><span class='pill warn'>⚠ DATA QUALITY</span> {_e(e.get('output_summary', ''))}</div>")
             elif act == "branch":
-                cls = {"retry": "warn", "escalated": "warn"}.get(st, "ok")
-                lab = {"retry": "RETRY → Planner", "escalated": "ESCALATE"}.get(st, "WRITE")
+                cls = {"retry": "retry", "escalated": "warn"}.get(st, "ok")
+                lab = {"retry": "↻ RETRY → Planner", "escalated": "⚠ ESCALATE"}.get(st, "✓ ACCEPT → Writer")
                 out.append(f"<div class='cv {cls} branch'><span class='pill {cls}'>{lab}</span> it{e.get('iteration')} · {_e(e.get('output_summary', ''))}</div>")
             elif e.get("agent_name") == "Writer" and st in ("retry", "rejected", "error", "fallback"):
-                out.append(f"<div class='cv warn'><span class='pill warn'>WRITER {_e(st.upper())}</span> {_e(e.get('output_summary', ''))}</div>")
+                out.append(f"<div class='cv warn'><span class='pill {"retry" if st == "retry" else "warn"}'>{"↻" if st == "retry" else "⚠"} WRITER {_e(st.upper())}</span> {_e(e.get('output_summary', ''))}</div>")
         return "".join(out) or "<div class='empty'>Critic verdicts, number checks, REJECTs and retries appear here.</div>"
 
     def evidence_rows(self) -> list[list]:
@@ -433,6 +436,11 @@ class RunView:
 
 def _e(x) -> str:
     return html.escape(str(x if x is not None else ""))
+
+
+VERDICT_TAG = {"supported": ("✓ ACCEPT", "ok"), "weak": ("◐ WEAK", "warn")}
+HYP_ICON = {"supported": "✓ ", "rejected": "✕ ", "inconclusive": "◐ ", "untested": "○ "}
+Q_ICON = {"ok": "✓ ", "error": "✕ ", "rejected": "✕ ", "failed": "✕ ", "running": "… "}
 
 
 def _hyp_cls(st: str) -> str:
