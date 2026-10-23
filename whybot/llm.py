@@ -254,7 +254,7 @@ class CassetteLLM(BaseLLM):
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.write_text(json.dumps({"question": question, "live_run_id": self.run_id, "trace": f"logs/{self.run_id}.jsonl",
                                          "recorded_at": _now(), "checks_version": _checks_version(),
-                                         **{k: v for k, v in self.header.items() if k == "hmem_recall"},
+                                         **{k: v for k, v in self.header.items() if k in ("hmem_recall", "table_notes", "dialect_notes")},
                                          "calls": self.recorded}, indent=1))
 
 

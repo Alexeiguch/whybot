@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from .checks import tables_in_sql
+from .checks import CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, tables_in_sql
 from .evidence import Evidence
 from .llm import BaseLLM
 from .schemas import ClaimSet, CriticReport, FinalAnswer, Plan, SQLDraft
@@ -83,14 +83,17 @@ class SQLAgent:
         "Never use semicolons, DDL or DML."
     )
 
-    def __init__(self, llm: BaseLLM):
-        self.llm = llm
+    def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
+        self.llm, self.version = llm, version  # version: the checks version the run's prompts and checks follow
 
     def write(self, purpose: str, tables: list[str], catalog: list[dict], notes: dict, dialect: str,
               dialect_notes: str, memory: str, question: str, failed: list[dict] | None = None) -> tuple[SQLDraft, dict]:
         known = [t["table"] for t in catalog]
         user = (f"DIALECT: {dialect}\n{dialect_notes}\n\nTABLES:\n{catalog_text(catalog, notes, tables or None)}\n\n"
                 f"INVESTIGATION QUESTION: {question}\nQUERY PURPOSE: {purpose}\n\nLESSONS FROM MEMORY:\n{memory or '(none)'}")
+        if self.version >= 4:
+            user += ("\n\nALLOWED TABLES (the evidence allowlist; write these fully-qualified names exactly, any other name is refused): "
+                     + ", ".join(known) + "\nCALENDAR: TPCDS_DB.date_dim.d_dow is 0=Sunday, 1=Monday .. 6=Saturday (never 7).")
         if failed:
             user += "\n\nPREVIOUS ATTEMPTS FAILED (repair the query):\n" + "\n".join(
                 f"SQL: {f['sql']}\nERROR: {f['error'][:700]}" for f in failed[-2:])
@@ -110,6 +113,8 @@ class SQLAgent:
                     break
             if not tables_in_sql(s, known):
                 errs.append(f"query must reference the catalog tables by full name: {', '.join(tables or known[:3])}")
+            if self.version >= 4:
+                errs += check_calendar_sql(s)
             return errs
 
         d, meta = self.llm.complete_json("sql", self.SYSTEM, user, SQLDraft, validator=validate, max_tokens=1500)
@@ -186,8 +191,13 @@ class Critic:
         "size of every derived value and check the statement's wording matches it; a change under about 5% is not a drop."
     )
 
-    def __init__(self, llm: BaseLLM):
-        self.llm = llm
+    SYSTEM_V4 = (" Judge each claim against the returned rows, not against its hypothesis: a claim whose numbers match the rows "
+                 "is evidence even when it refutes the hypothesis (e.g. the hypothesis expected a drop and the rows show none). Mark "
+                 "such a claim supported and set the hypothesis refuted; never mark a claim unsupported because of the direction its "
+                 "hypothesis expected.")
+
+    def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
+        self.llm, self.version = llm, version
 
     def review(self, question: str, plan_text: str, claims: ClaimSet, evidence: list[Evidence], auto_checks: dict,
                catalog_tables: list[str], iteration: int, max_iterations: int) -> tuple[CriticReport, dict]:
@@ -205,9 +215,12 @@ class Critic:
             low = [t.lower() for t in catalog_tables]
             for f in r.follow_up_queries:
                 errs += [f"follow-up table {t} not in catalog" for t in f.tables if t.lower() not in low]
+            if self.version >= 4:
+                errs += check_critic_verdicts(r, auto_checks)
             return errs
 
-        return self.llm.complete_json("critic", self.SYSTEM, user, CriticReport, validator=validate, max_tokens=3000)
+        system = self.SYSTEM + (self.SYSTEM_V4 if self.version >= 4 else "")
+        return self.llm.complete_json("critic", system, user, CriticReport, validator=validate, max_tokens=3000)
 
 
 class Writer:

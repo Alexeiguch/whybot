@@ -16,7 +16,12 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      other three Mondays" are checked against the cited rows
 #   3: every cause the headline or answer names (holiday, weather, trip mix, ...) needs a critic-supported claim
 #      about that cause, or the wording must hedge it
-CHECKS_VERSION = 3
+#   4: bare day-of-month numbers that continue a date list ("2024-11-07, 14, 21", "7, 14 and 21 Dec") are dates when each
+#      such date appears in the evidence or the question; the SQL agent sees the exact allowlisted table names, a close
+#      miss (whybot.date_dim) is repaired to the one allowlisted table it can only mean, and d_dow = 7 is refused
+#      (TPCDS d_dow is 0=Sunday..6=Saturday); the Critic may not mark a claim that matches its rows unsupported only
+#      because it refutes its hypothesis
+CHECKS_VERSION = 4
 
 
 def _num(v):
@@ -371,7 +376,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
             if cit.table.lower() not in [t.lower() for t in ev.tables]:
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
     problems += check_text_numbers("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
-                                   evidence, allowed_qids, extra_values, strict_rates=version >= 2)
+                                   evidence, allowed_qids, extra_values, strict_rates=version >= 2,
+                                   day_lists=known_days(evidence, context) if version >= 4 else None)
     if version >= 2:
         for i, c in enumerate(ans.claims):
             problems += [f"claim {i + 1}: {p}" for p in check_comparisons(c.text, evidence, {x.qid for x in c.citations})]
@@ -397,7 +403,51 @@ _DAY_LIST = re.compile(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a
 _TOLERANCE = re.compile(r"(?:±|\+/-)\s?\d+(?:\.\d+)?\s?%")
 
 
-def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True) -> list[str]:
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+_LIST_SEP = r"\s*(?:,\s*(?:and\s+|&\s*)?|and\s+|&\s*)"
+_DAY = r"\d{1,2}(?:st|nd|rd|th)?"
+# "2024-11-07, 14, 21" / "Nov 7, 14 and 21": an anchor date followed by more days of the same month
+_DAYS_AFTER = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_MONTH})\s+{_DAY}\b)(?P<rest>(?:{_LIST_SEP}{_DAY}\b(?![-./]\d|\s*(?:%|x\b|k\b|{_MONTH})))+)", re.I)
+# "7, 14 and 21 Dec": days of the month listed before the month that ends the list
+_DAYS_BEFORE = re.compile(rf"(?P<rest>\b(?:{_DAY}{_LIST_SEP})+){_DAY}\s+(?P<m>{_MONTH})", re.I)
+
+
+def blank_day_lists(text: str, known_days: set[tuple[int, int]]) -> str:
+    """Blank the bare day numbers of a date list when every date they form is known (in a query result, a note or the
+    question). A list with any unknown date is left alone, so its numbers are still checked as figures."""
+    def days_of(rest: str) -> list[int]:
+        return [int(d) for d in re.findall(r"\d{1,2}", rest)]
+
+    def ok(month: int, days: list[int]) -> bool:
+        return bool(days) and all((month, d) in known_days for d in days)
+
+    def after(m):
+        month = int(m.group("m1")) if m.group("m1") else _MON[m.group("m2").lower()[:3]]
+        if ok(month, days_of(m.group("rest"))):
+            return m.group("anchor") + " " * len(m.group("rest"))
+        return m.group(0)
+
+    def before(m):
+        month = _MON[m.group("m").lower()[:3]]
+        if ok(month, days_of(m.group("rest"))):
+            return " " * len(m.group("rest")) + m.group(0)[len(m.group("rest")):]
+        return m.group(0)
+
+    return _DAYS_BEFORE.sub(before, _DAYS_AFTER.sub(after, text))
+
+
+def known_days(evidence: dict[str, Evidence], context: str = "") -> set[tuple[int, int]]:
+    out = month_days(context)
+    for ev in evidence.values():
+        if ev and ev.status == "ok":
+            for r in ev.rows:
+                for v in r:
+                    out |= month_days(str(v))
+    return out
+
+
+def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True,
+                       day_lists: set[tuple[int, int]] | None = None) -> list[str]:
     """Every number written in the final answer (headline, answer, claims, recommendation and caveats) must be backed
     by evidence. A % or Nx must be a derived value of a critic-supported claim (re-evaluated from its formula) or a
     cell of a percentage or ratio column of a query the answer may cite (allowed_qids), never an arbitrary cell that
@@ -418,6 +468,8 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
                         rate_cells.append(abs(n))
     plain_pool = sorted(set(derived + cells))
     rate_pool = sorted(set(derived + rate_cells)) if strict_rates else plain_pool
+    if day_lists is not None:
+        text = blank_day_lists(text, day_lists)
     text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
     problems = []
     for m in _NUM_RE.finditer(text):
@@ -680,4 +732,66 @@ def result_sanity(columns: list[str], rows: list[list]) -> list[str]:
         if len(keys) == len(rows) and len(rest) == 1:
             problems.append("every row has identical values in all non-key columns although the keys differ: "
                             "likely a cross join or a missing join/group key; join explicitly on the date key")
+    return problems
+
+
+# ---- v4: SQL-side checks before a query runs --------------------------------------------------------------------------
+_DOW7 = re.compile(r"\bd_dow\s*(?:=|==|>=|<=|<>|!=)\s*'?7\b|\bd_dow\s+(?:not\s+)?in\s*\([^)]*\b7\b[^)]*\)", re.I)
+
+
+def check_calendar_sql(sql: str) -> list[str]:
+    """TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday (unlike Spark dayofweek(), 1=Sunday..7=Saturday), so d_dow = 7
+    never matches a row: an empty result that looks like evidence of absence."""
+    s = re.sub(r"'(?:[^']|'')*'", lambda m: m.group(0) if m.group(0) in ("'7'", "'6'") else "''", sql)
+    if _DOW7.search(s):
+        return ["TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday (Saturday is 6, not 7; Spark dayofweek() is the one that "
+                "uses 1..7): fix the d_dow filter or use d_day_name = 'Saturday'"]
+    return []
+
+
+def repair_table_names(sql: str, allowed: list[str]) -> tuple[str, list[str]]:
+    """Rewrite a table reference that is not allowlisted to the ONE allowlisted table it can only mean: the same table
+    name under a wrong or extra prefix (whybot.date_dim, whybot.tpcds_db.date_dim -> TPCDS_DB.date_dim). Ambiguous or
+    unknown names are left as they are, so the allowlist still fails closed. Returns (sql, ["old -> new", ...])."""
+    from .datasource.base import DataSourceError, referenced_tables
+    try:
+        refs = referenced_tables(sql)
+    except DataSourceError:
+        return sql, []
+    low = {t.lower(): t for t in allowed}
+    repairs = []
+    for ref in sorted(refs):
+        if ref in low:
+            continue
+        parts = ref.split(".")
+        cands = {t for lt, t in low.items() if ref.endswith("." + lt)} or {t for lt, t in low.items() if lt.split(".")[-1] == parts[-1]}
+        if len(cands) != 1:
+            continue
+        new = cands.pop()
+        pat = re.compile(r"(?<![\w.`])" + r"\.".join(rf"`?{re.escape(p)}`?" for p in parts) + r"(?![\w`])", re.I)
+        sql2, n = pat.subn(new, sql)
+        if n:
+            sql = sql2
+            repairs.append(f"{ref} -> {new}")
+    return sql, repairs
+
+
+_HYP_DIRECTION = re.compile(
+    r"\b(?:hypothes[ie]s|H\d+)\b[^.;]{0,40}?\b(?:expects?|expected|predicts?|predicted|anticipat\w+|assum\w+|requires?|implies|implied)\b"
+    r"|\bdirection of the hypothes[ie]s\b|\b(?:does not|doesn't|fails? to) (?:support|match|fit) (?:the |its )?hypothes[ie]s\b", re.I)
+
+
+def check_critic_verdicts(report: CriticReport, checks: dict[str, NumericCheck]) -> list[str]:
+    """A claim whose numbers pass the automated check is evidence even when it refutes its hypothesis. A verdict of
+    unsupported (or weak) that rests on the hypothesis' expected direction, not on the rows, is sent back."""
+    problems = []
+    for v in report.verdicts:
+        ch = checks.get(v.cid)
+        if ch is None or not ch.ok or v.verdict == "supported":
+            continue
+        if _HYP_DIRECTION.search(v.reason or ""):
+            problems.append(f"{v.cid}: judge the claim against the returned rows, not against what its hypothesis expected. Its numbers "
+                            f"pass the automated check; if the statement says what the rows say, mark the claim supported and set the "
+                            f"hypothesis to refuted (a claim that refutes a hypothesis is valid evidence). Mark it weak or unsupported "
+                            f"only for a problem with the claim itself (wording, baseline, confounders)")
     return problems

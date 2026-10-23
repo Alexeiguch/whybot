@@ -22,8 +22,11 @@ class RecordingDataSource(DataSource):
 
     def catalog(self):
         cat = self.inner.catalog()
-        if not self._catalog_written:
-            (self.dir.parent / "catalog.json").write_text(json.dumps(
+        path = self.dir.parent / "catalog.json"
+        if not self._catalog_written and not path.exists():
+            # Written once. The catalog notes of committed recordings stay as they were recorded (older cassettes replay
+            # with them); newer cassettes carry their own table_notes and dialect_notes in their header.
+            path.write_text(json.dumps(
                 {"source": "zetaris", "recorded_at": _now(), "dialect": self.dialect, "dialect_notes": self.dialect_notes,
                  "table_notes": load_notes(), "catalog": cat}, indent=1))
             self._catalog_written = True
