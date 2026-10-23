@@ -1,8 +1,0 @@
-{
- "source": "zetaris",
- "sql": "SELECT y.trip_date, y.trips AS target_trips, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date IN (DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21', DATE '2024-11-28') GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
- "sql_hash": "sha256:3424dd47c3b090b2",
- "recorded_at": "2026-10-23T11:57:43+00:00",
- "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The non-aggregating expression \"trips\" is based on columns which are not participating in the GROUP BY clause.\nAdd the columns or the expression to the GROUP BY, aggregate the expression, or use \"any_value(trips)\" if you do not care which of the values within a group is returned.;\nGlobalLimit 500\n+- LocalLimit 500\n   +- Sort [trip_date#40205 ASC NULLS FIRST], true\n      +- Aggregate [trip_date#40205], [trip_date#40205, trips#40206L AS target_trips#40149L",
- "label": "LIVE Zetaris Lightning (JDBC)"
-}

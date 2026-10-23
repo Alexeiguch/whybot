@@ -1,8 +1,0 @@
-{
- "source": "zetaris",
- "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date IN (SELECT y.trip_date FROM whybot.yellow_daily y WHERE TPCDS_DB.date_dim.d_dow = 1 AND y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date) ORDER BY h.holiday_date LIMIT 500",
- "sql_hash": "sha256:f35eb15351eeaee8",
- "recorded_at": "2026-10-23T11:31:36+00:00",
- "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `TPCDS_DB`.`date_dim`.`d_dow` cannot be resolved. Did you mean one of the following? [`y`.`trip_date`, `y`.`avg_trip_distance`, `y`.`trips`, `y`.`avg_total_amount`].; line 1 pos 156;\n'GlobalLimit 500\n+- 'LocalLimit 500\n   +- 'Sort ['h.holiday_date ASC NULLS FIRST], true\n      +- 'Project ['h.holiday_date, 'h.holiday_name, 'h.is_national]\n         +- 'Filter holiday_date#33543 IN (list#33485 [])\n     ",
- "label": "LIVE Zetaris Lightning (JDBC)"
-}

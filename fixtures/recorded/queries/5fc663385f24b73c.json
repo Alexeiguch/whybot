@@ -1,8 +1,0 @@
-{
- "source": "zetaris",
- "sql": "SELECT MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.total_amount END) AS target_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' AND d.d_dow = 1 THEN y.total_amount END) AS baseline_avg_total_amount, COUNT(DISTINCT y.trip_date) AS days_in_january FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' AND d.d_dow = 1 GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 1",
- "sql_hash": "sha256:5fc663385f24b73c",
- "recorded_at": "2026-10-23T11:39:12+00:00",
- "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `y`.`total_amount` cannot be resolved. Did you mean one of the following? [`y`.`avg_total_amount`, `d`.`d_moy`, `d`.`d_dom`, `d`.`d_dow`, `d`.`d_qoy`].; line 1 pos 58;\n'GlobalLimit 1\n+- 'LocalLimit 1\n   +- 'Sort ['y.trip_date ASC NULLS FIRST], true\n      +- 'Aggregate [trip_date#35565], ['MAX(CASE WHEN (trip_date#35565 = 2025-01-20) THEN 'y.total_amount END) AS target_total_amount#35508, 'AVG(CASE WH",
- "label": "LIVE Zetaris Lightning (JDBC)"
-}
