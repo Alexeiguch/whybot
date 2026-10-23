@@ -1,0 +1,31 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, w.snow_mm FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 6 AND y.trip_date BETWEEN DATE '2024-12-01' AND DATE '2024-12-31' ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:7c019442282c5d9d",
+ "recorded_at": "2026-10-23T10:58:27+00:00",
+ "columns": [
+  "trip_date",
+  "snow_mm"
+ ],
+ "rows": [
+  [
+   "2024-12-07",
+   0
+  ],
+  [
+   "2024-12-14",
+   0
+  ],
+  [
+   "2024-12-21",
+   46
+  ],
+  [
+   "2024-12-28",
+   0
+  ]
+ ],
+ "elapsed_s": 16.216,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

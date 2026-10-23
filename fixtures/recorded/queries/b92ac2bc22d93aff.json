@@ -1,0 +1,8 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.avg_total_amount END) AS target_avg_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' THEN y.avg_total_amount END) AS baseline_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' THEN y.trips END) AS baseline_avg_trips, d.d_day_name AS target_day, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN d.d_holiday END) AS target_d_holiday, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN h.is_national END) AS target_is_national FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date WHERE d.d_dow = 1 AND y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 31",
+ "sql_hash": "sha256:b92ac2bc22d93aff",
+ "recorded_at": "2026-10-23T11:28:58+00:00",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The non-aggregating expression \"d_day_name\" is based on columns which are not participating in the GROUP BY clause.\nAdd the columns or the expression to the GROUP BY, aggregate the expression, or use \"any_value(d_day_name)\" if you do not care which of the values within a group is returned.;\nGlobalLimit 31\n+- LocalLimit 31\n   +- Sort [trip_date#32589 ASC NULLS FIRST], true\n      +- Aggregate [trip_date#32589], [trip_date#32589, max(CASE WHEN (trip_date#32",
+ "label": "LIVE Zetaris Lightning (JDBC)"
+}

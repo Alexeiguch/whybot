@@ -1,0 +1,21 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h JOIN whybot.yellow_daily y ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 1 AND y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY h.holiday_date, h.holiday_name, h.is_national ORDER BY h.holiday_date LIMIT 500",
+ "sql_hash": "sha256:6ee3e773452bca2c",
+ "recorded_at": "2026-10-23T11:32:04+00:00",
+ "columns": [
+  "holiday_date",
+  "holiday_name",
+  "is_national"
+ ],
+ "rows": [
+  [
+   "2025-01-20",
+   "Martin Luther King, Jr. Day",
+   true
+  ]
+ ],
+ "elapsed_s": 16.082,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 1
+}

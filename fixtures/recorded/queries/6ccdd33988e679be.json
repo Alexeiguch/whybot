@@ -1,0 +1,56 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' AND d.d_dow = 1 THEN y.trips END) AS baseline_avg_trips, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' AND d.d_dow = 1 GROUP BY y.trip_date, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:6ccdd33988e679be",
+ "recorded_at": "2026-10-23T11:17:15+00:00",
+ "columns": [
+  "trip_date",
+  "target_trips",
+  "baseline_avg_trips",
+  "prcp_mm",
+  "snow_mm",
+  "tmax_c",
+  "tmin_c"
+ ],
+ "rows": [
+  [
+   "2025-01-06",
+   null,
+   80127.0,
+   2.0,
+   23,
+   -1.0,
+   -5.5
+  ],
+  [
+   "2025-01-13",
+   null,
+   100492.0,
+   0.0,
+   0,
+   5.6,
+   0.6
+  ],
+  [
+   "2025-01-20",
+   90094,
+   null,
+   0.0,
+   0,
+   -3.2,
+   -8.2
+  ],
+  [
+   "2025-01-27",
+   null,
+   93060.0,
+   0.0,
+   0,
+   4.4,
+   -0.5
+  ]
+ ],
+ "elapsed_s": 15.864,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}
