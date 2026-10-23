@@ -1,8 +1,0 @@
-{
- "source": "zetaris",
- "sql": "SELECT y.trip_date, y.trips, w.prcp_mm, CASE WHEN h.holiday_date IS NOT NULL THEN 'federal_holiday' ELSE 'non_holiday' END AS holiday_status FROM whybot.yellow_daily y LEFT JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-04-01' AND DATE '2025-02-28' AND w.prcp_mm > 20 AND h.holiday_date IS NULL AND (SELECT d_dow FROM TPCDS_DB.date_dim WHERE d_date = y.trip_date) = 4 ORDER BY y.trip_date LIMIT 50",
- "sql_hash": "sha256:d1a8d50e869419ba",
- "recorded_at": "2026-10-23T10:36:59+00:00",
- "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNSUPPORTED_SUBQUERY_EXPRESSION_CATEGORY.MUST_AGGREGATE_CORRELATED_SCALAR_SUBQUERY] Unsupported subquery expression: Correlated scalar subqueries must be aggregated to return at most one row.; line 1 pos 412;\nGlobalLimit 50\n+- LocalLimit 50\n   +- Sort [trip_date#17885 ASC NULLS FIRST], true\n      +- Project [trip_date#17885, trips#17886L, prcp_mm#17949, CASE WHEN isnotnull(holiday_date#18014) THEN federal_holiday ELSE non_holiday END AS holiday_status#17829]\n         +- Filt",
- "label": "LIVE Zetaris Lightning (JDBC)"
-}
