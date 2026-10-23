@@ -18,8 +18,8 @@ THURSDAYS = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, sta
 EV = {"Q1": THURSDAYS}
 
 
-def test_checks_version_is_4():
-    assert CHECKS_VERSION == 4
+def test_checks_version_is_at_least_4():
+    assert CHECKS_VERSION >= 4
 
 
 # ---- 1. bare day-of-month numbers in a date list ----------------------------------------------------------------------

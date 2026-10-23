@@ -21,7 +21,9 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      miss (whybot.date_dim) is repaired to the one allowlisted table it can only mean, and d_dow = 7 is refused
 #      (TPCDS d_dow is 0=Sunday..6=Saturday); the Critic may not mark a claim that matches its rows unsupported only
 #      because it refutes its hypothesis
-CHECKS_VERSION = 4
+#   5: units: a number or unit word must match the unit of its column (TLC distances are miles, never km); the Analyst
+#      and Writer prompts list the column units
+CHECKS_VERSION = 5
 
 
 def _num(v):
@@ -122,6 +124,8 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
     problems += check_weather_wording(claim.statement, evidence, context)
     if version >= 2:
         problems += check_comparisons(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
+    if version >= 5:
+        problems += check_units(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
     return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
@@ -382,6 +386,9 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
         for i, c in enumerate(ans.claims):
             problems += [f"claim {i + 1}: {p}" for p in check_comparisons(c.text, evidence, {x.qid for x in c.citations})]
         problems += check_comparisons("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
+    if version >= 5:
+        problems += check_units("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
+                                evidence, allowed_qids)
     if version >= 3 and supported_statements is not None:
         problems += check_causes(ans.headline + ".\n" + ans.answer, list(supported_statements))
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
@@ -795,3 +802,98 @@ def check_critic_verdicts(report: CriticReport, checks: dict[str, NumericCheck])
                             f"hypothesis to refuted (a claim that refutes a hypothesis is valid evidence). Mark it weak or unsupported "
                             f"only for a problem with the claim itself (wording, baseline, confounders)")
     return problems
+
+
+# ---- v5: units -------------------------------------------------------------------------------------------------------
+# The unit of a result column, from its name. TLC trip_distance is miles; NOAA prcp/snow are mm, tmax/tmin deg C.
+def column_unit(col: str) -> str | None:
+    c = col.lower()
+    if re.search(r"(?:^|_)km(?:_|$)|kilomet", c):
+        return "km"
+    if "distance" in c or re.search(r"(?:^|_)(?:mi|miles)(?:_|$)", c):
+        return "mi"
+    if re.search(r"(?:^|_)mm(?:_|$)", c) or c in ("prcp", "snow", "snwd") or "precip" in c:
+        return "mm"
+    if re.search(r"(?:^|_)f$", c) and re.search(r"temp|tmax|tmin", c):
+        return "F"
+    if re.search(r"(?:^|_)c$", c) and re.search(r"temp|tmax|tmin", c) or c in ("tmax", "tmin"):
+        return "C"
+    if re.search(r"amount|fare|tip|toll|price|revenue|usd", c):
+        return "USD"
+    return None
+
+
+UNIT_LABEL = {"mi": "miles", "km": "km", "mm": "mm", "C": "deg C", "F": "deg F", "USD": "USD"}
+_UNIT_DIM = {"mi": "length", "km": "length", "mm": "depth", "cm": "depth", "in": "depth", "C": "temp", "F": "temp",
+             "USD": "money", "EUR": "money", "GBP": "money"}
+_UNIT_WORDS = [
+    ("km", r"\bkms?\b|\bkilomet(?:er|re)s?\b"),
+    ("mi", r"\bmiles?\b|\bmi\b"),
+    ("mm", r"\bmm\b|\bmillimet(?:er|re)s?\b"),
+    ("cm", r"\bcm\b|\bcentimet(?:er|re)s?\b"),
+    ("in", r"\binch(?:es)?\b"),
+    ("C", r"°\s?C\b|\bdeg(?:rees?)?\s?C\b|\bdegrees? Celsius\b|\bCelsius\b"),
+    ("F", r"°\s?F\b|\bdeg(?:rees?)?\s?F\b|\bdegrees? Fahrenheit\b|\bFahrenheit\b"),
+    ("USD", r"\bUSD\b|\bUS\$|\bdollars?\b"),
+    ("EUR", r"€|\bEUR\b|\beuros?\b"),
+    ("GBP", r"£|\bGBP\b"),
+]
+_UNIT_ALT = "|".join(f"(?P<u_{k}>{p})" for k, p in _UNIT_WORDS)
+_NUM_UNIT = re.compile(rf"(?<![\w.])~?(?P<n>[-+]?(?:\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|\d+(?:\.\d+)?))\s?(?:{_UNIT_ALT})", re.I)
+_DOLLAR_NUM = re.compile(r"(?<![\w$])\$\s?(?P<n>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)")
+_UNIT_ANY = re.compile(_UNIT_ALT, re.I)
+
+
+def _unit_of(m) -> str:
+    return next(k for k, _ in _UNIT_WORDS if m.group(f"u_{k}"))
+
+
+def units_text(evidence) -> str:
+    """The units of the returned columns, for the Analyst and Writer prompts (v5)."""
+    by_unit: dict[str, list[str]] = {}
+    for ev in (evidence.values() if isinstance(evidence, dict) else evidence):
+        if ev and ev.status == "ok":
+            for c in ev.columns:
+                u = column_unit(c)
+                if u and c not in by_unit.setdefault(u, []):
+                    by_unit[u].append(c)
+    if not by_unit:
+        return ""
+    parts = [f"{', '.join(cols)} = {UNIT_LABEL[u]}" + (" (TLC distances are miles: never write km)" if u == "mi" else "")
+             for u, cols in by_unit.items()]
+    return "UNITS: " + "; ".join(parts) + "."
+
+
+def check_units(text: str, evidence: dict[str, Evidence], qids: set[str]) -> list[str]:
+    """A number written with a unit must carry the unit of the column it comes from ('4.79 km' when avg_trip_distance is
+    miles; '9.4 mm' when 9.4 is tmax_c). A unit word of a dimension the cited columns measure in another unit ('4.40-5.53
+    km' with distances in miles) is flagged too. Numbers that are not cells of a column with a known unit are left to the
+    number check."""
+    cols = []  # (qid, column, unit, values)
+    for q in sorted(qids):
+        ev = evidence.get(q)
+        if not ev or ev.status != "ok":
+            continue
+        for i, c in enumerate(ev.columns):
+            u = column_unit(c)
+            cols.append((q, c, u, [r[i] for r in ev.rows]))
+    problems, flagged = [], set()
+    text = _DATE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    found = [(m.group("n"), _unit_of(m), m.group(0).strip()) for m in _NUM_UNIT.finditer(text)]
+    found += [(m.group("n"), "USD", m.group(0).strip()) for m in _DOLLAR_NUM.finditer(text)]
+    for n, unit, shown in found:
+        hits = [(q, c, u) for q, c, u, vals in cols if any(_num(v) is not None and value_matches(n, v) for v in vals)]
+        if not hits or any(u is None for _, _, u in hits) or any(u == unit for _, _, u in hits):
+            continue
+        q, c, u = hits[0]
+        flagged.add(unit)
+        problems.append(f"'{shown}': {n} is {q}.{c}, which is in {UNIT_LABEL[u]}, not {unit}")
+    known = {u for _, _, u, _ in cols if u}
+    for m in _UNIT_ANY.finditer(text):
+        unit = _unit_of(m)
+        same_dim = sorted(u for u in known if _UNIT_DIM.get(u) == _UNIT_DIM.get(unit))
+        if same_dim and unit not in same_dim and unit not in flagged:
+            flagged.add(unit)
+            c = next(c for _, c, u, _ in cols if u in same_dim)
+            problems.append(f"the answer writes {m.group(0).strip()!r} but {c} is in {UNIT_LABEL[same_dim[0]]}")
+    return list(dict.fromkeys(problems))

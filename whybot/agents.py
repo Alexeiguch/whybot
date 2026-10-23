@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from .checks import CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, tables_in_sql
+from .checks import CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, tables_in_sql, units_text
 from .evidence import Evidence
 from .llm import BaseLLM
 from .schemas import ClaimSet, CriticReport, FinalAnswer, Plan, SQLDraft
@@ -142,13 +142,15 @@ class Analyst:
         "and if the change is small (under about 5%) or opposite to the question, add a claim saying the premise is not supported by the data."
     )
 
-    def __init__(self, llm: BaseLLM):
-        self.llm = llm
+    def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
+        self.llm, self.version = llm, version
 
     def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str) -> tuple[ClaimSet, dict]:
         ev_ids = {e.qid for e in evidence}
         user = (f"QUESTION: {question}\n\nHYPOTHESES:\n{plan_text}\n\nEVIDENCE:\n" +
                 "\n\n".join(e.for_prompt() for e in evidence) + f"\n\nCRITIC FEEDBACK ON EARLIER DRAFT:\n{feedback or '(none)'}")
+        if self.version >= 5:
+            user += "\n\n" + units_text(evidence)
 
         ev_map = {e.qid: e for e in evidence}
         rounds = {"n": 0}
@@ -166,7 +168,7 @@ class Analyst:
             if errs or rounds["n"] >= 3:
                 return errs  # two self-repair rounds; after that the Critic's own number check decides
             for c in cs.claims:
-                ch = check_claim_numbers(c.model_copy(deep=True), ev_map)
+                ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
@@ -234,8 +236,8 @@ class Writer:
         "supported claim; do not compute new percentages."
     )
 
-    def __init__(self, llm: BaseLLM):
-        self.llm = llm
+    def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
+        self.llm, self.version = llm, version
 
     def write(self, question: str, status: str, supported_claims: list[dict], rejected: list[dict], evidence: list[Evidence],
               hypothesis_status: list[dict], validator) -> tuple[FinalAnswer, dict]:
@@ -247,4 +249,6 @@ class Writer:
                 f"HYPOTHESIS STATUS:\n{json.dumps(hypothesis_status, indent=1)}\n\nCITABLE EVIDENCE (cite only from here):\n{ev_list}")
         if status == "insufficient_evidence":
             user += "\n\nThe investigation was escalated: say clearly that the evidence is insufficient, what was ruled out, and what data would settle it."
+        if self.version >= 5:
+            user += "\n\n" + units_text([e for e in evidence if e.qid in citable])
         return self.llm.complete_json("writer", self.SYSTEM, user, FinalAnswer, validator=validator, max_tokens=2500)

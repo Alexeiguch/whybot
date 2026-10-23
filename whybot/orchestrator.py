@@ -219,7 +219,7 @@ class WhyBot:
     # ------------------------------------------------------------------ the loop
     def _investigate(self, question, run_id, tr: Tracer, llm, ds: DataSource, mem, deadline) -> dict:
         v = self._checks_version
-        planner, sqlagent, analyst, critic, writer = Planner(llm), SQLAgent(llm, v), Analyst(llm), Critic(llm, v), Writer(llm)
+        planner, sqlagent, analyst, critic, writer = Planner(llm), SQLAgent(llm, v), Analyst(llm, v), Critic(llm, v), Writer(llm, v)
 
         catalog = ds.catalog()
         tables = [t["table"] for t in catalog]
