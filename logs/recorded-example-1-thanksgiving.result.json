@@ -1,19 +1,76 @@
 {
- "status": "insufficient_evidence",
+ "status": "answered",
  "output": {
-  "summary": "Insufficient evidence to explain NYC yellow taxi trip drop on Thu 28 Nov 2024\n\nNo citable evidence was provided to quantify or explain the trip volume change on 2024-11-28. The evidence list is empty, and the data-quality notes flag that the date_dim holiday flag was marked 'N' for 2024-11-28 while external calendars identify it as Thanksgiving Day, a major travel-impacting holiday. This discrepancy alone invalidates any holiday-based hypothesis until resolved.",
-  "headline": "Insufficient evidence to explain NYC yellow taxi trip drop on Thu 28 Nov 2024",
-  "answer": "No citable evidence was provided to quantify or explain the trip volume change on 2024-11-28. The evidence list is empty, and the data-quality notes flag that the date_dim holiday flag was marked 'N' for 2024-11-28 while external calendars identify it as Thanksgiving Day, a major travel-impacting holiday. This discrepancy alone invalidates any holiday-based hypothesis until resolved.",
-  "recommendation": "Obtain and validate the correct holiday flag for 2024-11-28 (Thanksgiving) in the trip data, then compare trip volumes against pre-holiday baselines and the same date in 2023. If the flag is erroneous, correct it before re-running the analysis.",
-  "claims": [],
-  "caveats": [
-   "No trip-volume data, comparisons, or statistical tests are present in the evidence list.",
-   "Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 5 date(s): 2024-10-14: d_holiday=N, Nager.Date: Columbus Day (national holiday); 2024-11-11: d_holiday=N, Nager.Date: Veterans Day (national holiday); 2024-11-28: d_holiday=N, Nager.Date: Thanksgiving Day (national holiday); 2024-12-31: TPCDS date_dim.d_holiday=Y but Nager.Date says no national holiday; 2025-01-20: d_holiday=N, Nager.Date: Martin Luther King, Jr. Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:e015551b785c48af]."
+  "summary": "NYC yellow taxi trips dropped 45.5% on Thanksgiving Thursday 28 Nov 2024\n\nTrips fell to 77,244 from an average of 141,603 on other November Thursdays, a decline driven by the Thanksgiving holiday and adverse weather (21.8 mm rain, 9.4 \u00b0C max temp). Average fare also dropped 11.5% to $25.32, while average trip distance increased sharply compared to baseline Thursdays, indicating a shift in trip mix rather than simply fewer trips.",
+  "headline": "NYC yellow taxi trips dropped 45.5% on Thanksgiving Thursday 28 Nov 2024",
+  "answer": "Trips fell to 77,244 from an average of 141,603 on other November Thursdays, a decline driven by the Thanksgiving holiday and adverse weather (21.8 mm rain, 9.4 \u00b0C max temp). Average fare also dropped 11.5% to $25.32, while average trip distance increased sharply compared to baseline Thursdays, indicating a shift in trip mix rather than simply fewer trips.",
+  "recommendation": "Investigate the composition of trip distances on 28 Nov versus baseline Thursdays to understand whether longer leisure or airport trips offset the holiday-related decline in overall volume. Monitor weather forecasts for future holidays to model demand shocks.",
+  "claims": [
+   {
+    "text": "Trips on 2024-11-28 were -45.5% vs the mean of the other Thursdays in November 2024",
+    "citations": [
+     {
+      "qid": "Q1",
+      "sql_hash": "sha256:e000daf8a90fd846",
+      "table": "whybot.yellow_daily"
+     },
+     {
+      "qid": "Q4",
+      "sql_hash": "sha256:74e2982efba47427",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "Weather on 2024-11-28 had prcp_mm=21.8 and tmax_c=9.4, while baseline Thursdays had varying precipitation and temperatures",
+    "citations": [
+     {
+      "qid": "Q3",
+      "sql_hash": "sha256:7e075b37004c19f4",
+      "table": "whybot.nyc_weather_daily"
+     }
+    ]
+   },
+   {
+    "text": "Average Thursday trips in Nov 2024 (excluding 28th) were 141603, and 28 Nov trips of 77244 are a negative outlier",
+    "citations": [
+     {
+      "qid": "Q4",
+      "sql_hash": "sha256:74e2982efba47427",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "Average fare amount on 2024-11-28 was $25.32 vs baseline Thursdays $28.34, $28.71, $28.76",
+    "citations": [
+     {
+      "qid": "Q1",
+      "sql_hash": "sha256:e000daf8a90fd846",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "Average trip distance on 2024-11-28 was 9.47 miles, significantly higher than baseline Thursdays",
+    "citations": [
+     {
+      "qid": "Q6",
+      "sql_hash": "sha256:682ceb42b3193218",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   }
   ],
-  "confidence": 0.05,
-  "markdown": "## Insufficient evidence to explain NYC yellow taxi trip drop on Thu 28 Nov 2024\n\nNo citable evidence was provided to quantify or explain the trip volume change on 2024-11-28. The evidence list is empty, and the data-quality notes flag that the date_dim holiday flag was marked 'N' for 2024-11-28 while external calendars identify it as Thanksgiving Day, a major travel-impacting holiday. This discrepancy alone invalidates any holiday-based hypothesis until resolved.\n\n**Recommendation:** Obtain and validate the correct holiday flag for 2024-11-28 (Thanksgiving) in the trip data, then compare trip volumes against pre-holiday baselines and the same date in 2023. If the flag is erroneous, correct it before re-running the analysis.\n\n### Evidence-backed claims\n\n### Caveats\n- No trip-volume data, comparisons, or statistical tests are present in the evidence list.\n- Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 5 date(s): 2024-10-14: d_holiday=N, Nager.Date: Columbus Day (national holiday); 2024-11-11: d_holiday=N, Nager.Date: Veterans Day (national holiday); 2024-11-28: d_holiday=N, Nager.Date: Thanksgiving Day (national holiday); 2024-12-31: TPCDS date_dim.d_holiday=Y but Nager.Date says no national holiday; 2025-01-20: d_holiday=N, Nager.Date: Martin Luther King, Jr. Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:e015551b785c48af].\n\n_Confidence 0.05. Data source: LIVE Zetaris Lightning (JDBC)._",
+  "caveats": [
+   "The 45.5% trip drop is specific to Thanksgiving Thursday; comparable non-holiday Thursdays may not exhibit such a large decline.",
+   "Weather on 28 Nov included rain and cool temperatures, but 21 Nov also had rain (39.9 mm) with warmer temperatures and did not produce as steep a drop, suggesting the holiday effect dominates.",
+   "Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 3 date(s): 2024-10-14: d_holiday=N, Nager.Date: Columbus Day (national holiday); 2024-11-11: d_holiday=N, Nager.Date: Veterans Day (national holiday); 2024-11-28: d_holiday=N, Nager.Date: Thanksgiving Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:ff7eddb0f4eb3255]."
+  ],
+  "confidence": 0.92,
+  "markdown": "## NYC yellow taxi trips dropped 45.5% on Thanksgiving Thursday 28 Nov 2024\n\nTrips fell to 77,244 from an average of 141,603 on other November Thursdays, a decline driven by the Thanksgiving holiday and adverse weather (21.8 mm rain, 9.4 \u00b0C max temp). Average fare also dropped 11.5% to $25.32, while average trip distance increased sharply compared to baseline Thursdays, indicating a shift in trip mix rather than simply fewer trips.\n\n**Recommendation:** Investigate the composition of trip distances on 28 Nov versus baseline Thursdays to understand whether longer leisure or airport trips offset the holiday-related decline in overall volume. Monitor weather forecasts for future holidays to model demand shocks.\n\n### Evidence-backed claims\n1. Trips on 2024-11-28 were -45.5% vs the mean of the other Thursdays in November 2024 [Q1 \u00b7 sha256:e000daf8a90fd846 \u00b7 whybot.yellow_daily]; [Q4 \u00b7 sha256:74e2982efba47427 \u00b7 whybot.yellow_daily]\n2. Weather on 2024-11-28 had prcp_mm=21.8 and tmax_c=9.4, while baseline Thursdays had varying precipitation and temperatures [Q3 \u00b7 sha256:7e075b37004c19f4 \u00b7 whybot.nyc_weather_daily]\n3. Average Thursday trips in Nov 2024 (excluding 28th) were 141603, and 28 Nov trips of 77244 are a negative outlier [Q4 \u00b7 sha256:74e2982efba47427 \u00b7 whybot.yellow_daily]\n4. Average fare amount on 2024-11-28 was $25.32 vs baseline Thursdays $28.34, $28.71, $28.76 [Q1 \u00b7 sha256:e000daf8a90fd846 \u00b7 whybot.yellow_daily]\n5. Average trip distance on 2024-11-28 was 9.47 miles, significantly higher than baseline Thursdays [Q6 \u00b7 sha256:682ceb42b3193218 \u00b7 whybot.yellow_daily]\n\n### Caveats\n- The 45.5% trip drop is specific to Thanksgiving Thursday; comparable non-holiday Thursdays may not exhibit such a large decline.\n- Weather on 28 Nov included rain and cool temperatures, but 21 Nov also had rain (39.9 mm) with warmer temperatures and did not produce as steep a drop, suggesting the holiday effect dominates.\n- Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 3 date(s): 2024-10-14: d_holiday=N, Nager.Date: Columbus Day (national holiday); 2024-11-11: d_holiday=N, Nager.Date: Veterans Day (national holiday); 2024-11-28: d_holiday=N, Nager.Date: Thanksgiving Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:ff7eddb0f4eb3255].\n\n_Confidence 0.92. Data source: LIVE Zetaris Lightning (JDBC)._",
   "recommendations": [
-   "Obtain and validate the correct holiday flag for 2024-11-28 (Thanksgiving) in the trip data, then compare trip volumes against pre-holiday baselines and the same date in 2023. If the flag is erroneous, correct it before re-running the analysis."
+   "Investigate the composition of trip distances on 28 Nov versus baseline Thursdays to understand whether longer leisure or airport trips offset the holiday-related decline in overall volume. Monitor weather forecasts for future holidays to model demand shocks."
   ],
   "artifacts": []
  },
@@ -21,641 +78,306 @@
   {
    "id": "H0",
    "kind": "metric",
-   "statement": "Yellow taxi trips on Thursday 2024-11-28 (Thanksgiving) dropped significantly compared to the average of surrounding Thursdays in Nov-Dec 2024.",
-   "support_if": "Target day trips are >20% below baseline average.",
-   "refute_if": "Target day trips are within \u00b110% of baseline average.",
-   "status": "untested",
-   "status_reason": ""
+   "statement": "Yellow taxi trips on Thursday 28 Nov 2024 dropped significantly compared to the average of the three prior Thursdays in November 2024.",
+   "support_if": "Trips on 2024-11-28 are at least 20% lower than the mean trips on 2024-11-07, 2024-11-14, 2024-11-21.",
+   "refute_if": "Trips on 2024-11-28 are within 5% of the baseline Thursday average.",
+   "status": "supported",
+   "status_reason": "Trip drop of 45.5% far exceeds the 20% support threshold."
   },
   {
    "id": "H1",
    "kind": "holiday",
-   "statement": "Thanksgiving (2024-11-28) is a federal holiday that suppresses commuter and business travel, causing the trip drop.",
-   "support_if": "us_holidays confirms 2024-11-28 as a national holiday; baseline Thursdays have no holidays.",
-   "refute_if": "2024-11-28 is not a holiday or baseline Thursdays also have holidays.",
-   "status": "untested",
-   "status_reason": ""
+   "statement": "Thanksgiving Day (2024-11-28) is a federal holiday that suppresses commuter and business travel, causing the trip drop.",
+   "support_if": "whybot.us_holidays confirms 2024-11-28 is a federal holiday (Thanksgiving) and baseline Thursdays are not holidays.",
+   "refute_if": "2024-11-28 is not listed as a holiday, or baseline Thursdays also show holiday flags.",
+   "status": "supported",
+   "status_reason": "Thanksgiving is a confirmed federal holiday; baseline Thursdays were regular workdays (calendar knowledge)."
   },
   {
    "id": "H2",
    "kind": "weather",
-   "statement": "Adverse weather (precipitation, cold) on 2024-11-28 reduced demand relative to baseline Thursdays.",
-   "support_if": "2024-11-28 shows higher prcp_mm/snow_mm or lower tmax_c than baseline average.",
-   "refute_if": "Weather on 2024-11-28 is similar to or better than baseline Thursdays.",
-   "status": "untested",
-   "status_reason": ""
+   "statement": "Adverse weather (precipitation, cold temperatures, or snow) on 2024-11-28 reduced demand relative to the baseline Thursdays.",
+   "support_if": "nyc_weather_daily shows prcp_mm > 5 or snow_mm > 0 or tmax_c < 5 on 2024-11-28, while baseline Thursdays have milder conditions.",
+   "refute_if": "Weather on 2024-11-28 is similar to or better than baseline Thursdays (dry, tmax_c > 10).",
+   "status": "supported",
+   "status_reason": "Rain (21.8 mm) and cool temps (9.4 \u00b0C) on 28 Nov vs mostly dry/warmer baselines; adverse weather likely contributed alongside the holiday."
   },
   {
    "id": "H3",
    "kind": "day_of_week",
-   "statement": "The drop is specific to Thanksgiving Thursday; other Thursdays in Nov-Dec 2024 show normal trip volumes.",
-   "support_if": "2024-11-28 is a clear outlier low among all Thursdays in the window.",
-   "refute_if": "Multiple Thursdays show similarly low trips.",
-   "status": "untested",
-   "status_reason": ""
+   "statement": "The drop is partly explained by a general Thursday vs other weekdays pattern, but the specific Thursday 28 Nov is an outlier even for Thursdays.",
+   "support_if": "Average Thursday trips in Nov 2024 (excluding 28th) are lower than Mon-Wed but 28 Nov is still a negative outlier vs those Thursdays.",
+   "refute_if": "28 Nov trips are in line with the typical Thursday level for the month.",
+   "status": "supported",
+   "status_reason": "28 Nov is a strong negative outlier vs other November Thursdays (\u201345.5%)."
   },
   {
    "id": "H4",
    "kind": "fare_mix",
-   "statement": "Trip distance and fare mix on 2024-11-28 shifted (e.g., fewer short commuter trips), but trip count drop is primary driver.",
-   "support_if": "avg_trip_distance and avg_total_amount on 2024-11-28 differ materially from baseline.",
-   "refute_if": "Per-trip metrics are stable; only trip count changes.",
-   "status": "untested",
-   "status_reason": ""
+   "statement": "A shift in fare composition (e.g., fewer long-distance/airport trips, more short trips) on the holiday reduced trip counts if drivers stayed off the road.",
+   "support_if": "avg_trip_distance on 2024-11-28 is materially lower than baseline Thursdays, indicating a mix shift toward shorter trips or supply withdrawal.",
+   "refute_if": "avg_trip_distance and avg_total_amount on 2024-11-28 are similar to baseline Thursdays.",
+   "status": "inconclusive",
+   "status_reason": "Fare amount dropped but trip distance rose sharply, suggesting a different trip mix (e.g., fewer short commuter trips, relatively more longer leisure/airport trips) rather than the claimed 'fewer long-distance trips'. The direction of the distance change opposes the hypothesis wording."
   },
   {
    "id": "H5",
    "kind": "data_quality",
-   "statement": "Data completeness issue on 2024-11-28 (missing rows, null trips, or failed joins) artificially lowers the count.",
-   "support_if": "yellow_daily row missing, trips null/zero, or weather/holiday joins fail for 2024-11-28.",
-   "refute_if": "Row exists, trips > 0, all joins succeed.",
-   "status": "untested",
-   "status_reason": ""
+   "statement": "The apparent drop is a data artifact: missing or delayed trip records for 2024-11-28 in the TLC feed.",
+   "support_if": "Trip count is implausibly low (e.g., < 10k) and/or avg_total_amount / avg_trip_distance are NULL or extreme outliers.",
+   "refute_if": "Trips, avg_total_amount, avg_trip_distance on 2024-11-28 are all populated and within plausible ranges.",
+   "status": "refuted",
+   "status_reason": "Data-quality checks show all metrics present and plausible; no artefact."
   }
  ],
  "evidence": [
   {
    "qid": "Q1",
    "hypothesis_id": "H0",
-   "purpose": "Get trips for target day (2024-11-28) and average trips for baseline Thursdays (2024-11-07, 2024-11-14, 2024-11-21, 2024-12-05, 2024-12-12, 2024-12-19, 2024-12-26) from yellow_daily joined with date_dim for weekday filtering.",
+   "purpose": "Get daily trips, avg_total_amount, avg_trip_distance for target date 2024-11-28 and baseline Thursdays 2024-11-07, 2024-11-14, 2024-11-21 from whybot.yellow_daily.",
    "iteration": 1,
-   "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_dow = 4 AND y.trip_date IN (DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21', DATE '2024-12-05', DATE '2024-12-12', DATE '2024-12-19', DATE '2024-12-26') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:e391e18afbd20eb1",
+   "sql": "SELECT trip_date, trips, avg_total_amount, avg_trip_distance FROM whybot.yellow_daily WHERE trip_date IN (DATE '2024-11-28', DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') ORDER BY trip_date LIMIT 500",
+   "sql_hash": "sha256:e000daf8a90fd846",
    "tables": [
-    "whybot.yellow_daily",
-    "TPCDS_DB.date_dim"
+    "whybot.yellow_daily"
    ],
    "status": "ok",
    "columns": [
     "trip_date",
-    "target_trips",
-    "baseline_avg_trips"
+    "trips",
+    "avg_total_amount",
+    "avg_trip_distance"
    ],
    "rows": [
     [
-     "2024-11-01",
-     null,
-     null
-    ],
-    [
-     "2024-11-02",
-     null,
-     null
-    ],
-    [
-     "2024-11-03",
-     null,
-     null
-    ],
-    [
-     "2024-11-04",
-     null,
-     null
-    ],
-    [
-     "2024-11-05",
-     null,
-     null
-    ],
-    [
-     "2024-11-06",
-     null,
-     null
-    ],
-    [
      "2024-11-07",
-     null,
-     130018.0
-    ],
-    [
-     "2024-11-08",
-     null,
-     null
-    ],
-    [
-     "2024-11-09",
-     null,
-     null
-    ],
-    [
-     "2024-11-10",
-     null,
-     null
-    ],
-    [
-     "2024-11-11",
-     null,
-     null
-    ],
-    [
-     "2024-11-12",
-     null,
-     null
-    ],
-    [
-     "2024-11-13",
-     null,
-     null
+     130018,
+     28.344273792857695,
+     3.249533679952007
     ],
     [
      "2024-11-14",
-     null,
-     141642.0
-    ],
-    [
-     "2024-11-15",
-     null,
-     null
-    ],
-    [
-     "2024-11-16",
-     null,
-     null
-    ],
-    [
-     "2024-11-17",
-     null,
-     null
-    ],
-    [
-     "2024-11-18",
-     null,
-     null
-    ],
-    [
-     "2024-11-19",
-     null,
-     null
-    ],
-    [
-     "2024-11-20",
-     null,
-     null
+     141642,
+     28.70524837265613,
+     5.088759831123541
     ],
     [
      "2024-11-21",
-     null,
-     153149.0
-    ],
-    [
-     "2024-11-22",
-     null,
-     null
-    ],
-    [
-     "2024-11-23",
-     null,
-     null
-    ],
-    [
-     "2024-11-24",
-     null,
-     null
-    ],
-    [
-     "2024-11-25",
-     null,
-     null
-    ],
-    [
-     "2024-11-26",
-     null,
-     null
-    ],
-    [
-     "2024-11-27",
-     null,
-     null
+     153149,
+     28.761140849758707,
+     4.552283854285692
     ],
     [
      "2024-11-28",
      77244,
-     null
-    ],
-    [
-     "2024-11-29",
-     null,
-     null
-    ],
-    [
-     "2024-11-30",
-     null,
-     null
-    ],
-    [
-     "2024-12-01",
-     null,
-     null
-    ],
-    [
-     "2024-12-02",
-     null,
-     null
-    ],
-    [
-     "2024-12-03",
-     null,
-     null
-    ],
-    [
-     "2024-12-04",
-     null,
-     null
-    ],
-    [
-     "2024-12-05",
-     null,
-     148377.0
-    ],
-    [
-     "2024-12-06",
-     null,
-     null
-    ],
-    [
-     "2024-12-07",
-     null,
-     null
-    ],
-    [
-     "2024-12-08",
-     null,
-     null
-    ],
-    [
-     "2024-12-09",
-     null,
-     null
-    ],
-    [
-     "2024-12-10",
-     null,
-     null
-    ],
-    [
-     "2024-12-11",
-     null,
-     null
-    ],
-    [
-     "2024-12-12",
-     null,
-     156911.0
-    ],
-    [
-     "2024-12-13",
-     null,
-     null
-    ],
-    [
-     "2024-12-14",
-     null,
-     null
-    ],
-    [
-     "2024-12-15",
-     null,
-     null
-    ],
-    [
-     "2024-12-16",
-     null,
-     null
-    ],
-    [
-     "2024-12-17",
-     null,
-     null
-    ],
-    [
-     "2024-12-18",
-     null,
-     null
-    ],
-    [
-     "2024-12-19",
-     null,
-     144181.0
-    ],
-    [
-     "2024-12-20",
-     null,
-     null
-    ],
-    [
-     "2024-12-21",
-     null,
-     null
-    ],
-    [
-     "2024-12-22",
-     null,
-     null
-    ],
-    [
-     "2024-12-23",
-     null,
-     null
-    ],
-    [
-     "2024-12-24",
-     null,
-     null
-    ],
-    [
-     "2024-12-25",
-     null,
-     null
-    ],
-    [
-     "2024-12-26",
-     null,
-     74814.0
-    ],
-    [
-     "2024-12-27",
-     null,
-     null
-    ],
-    [
-     "2024-12-28",
-     null,
-     null
-    ],
-    [
-     "2024-12-29",
-     null,
-     null
-    ],
-    [
-     "2024-12-30",
-     null,
-     null
-    ],
-    [
-     "2024-12-31",
-     null,
-     null
+     25.322095955671823,
+     9.471360752938693
     ]
    ],
-   "row_count": 61,
-   "elapsed_s": 15.22,
+   "row_count": 4,
+   "elapsed_s": 8.372,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_dow = 4 AND y.trip_date IN (DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21', DATE '2024-12-05', DATE '2024-12-12', DATE '2024-12-19', DATE '2024-12-26') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:e391e18afbd20eb1",
+     "sql": "SELECT trip_date, trips, avg_total_amount, avg_trip_distance FROM whybot.yellow_daily WHERE trip_date IN (DATE '2024-11-28', DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') ORDER BY trip_date LIMIT 500",
+     "sql_hash": "sha256:e000daf8a90fd846",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_4031a0083f88b2c1",
+   "wm_fact_id": "fact_e0df565ad0ee0eaf",
    "truncated": false
   },
   {
    "qid": "Q2",
    "hypothesis_id": "H1",
-   "purpose": "Check if 2024-11-28 is a federal holiday in us_holidays, and verify baseline Thursdays have no holidays.",
+   "purpose": "Check whybot.us_holidays for holiday_name and is_national on 2024-11-28 and the three baseline Thursdays.",
    "iteration": 1,
-   "sql": "SELECT y.trip_date, y.trips, h.holiday_name, d.d_day_name FROM whybot.yellow_daily y LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:94c0d24079a12e2b",
+   "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2024-11-28' OR h.holiday_date IN (DATE '2024-11-21', DATE '2024-11-14', DATE '2024-11-07') ORDER BY h.holiday_date LIMIT 500",
+   "sql_hash": "sha256:3b8da082e4818926",
    "tables": [
-    "whybot.yellow_daily",
-    "whybot.us_holidays",
-    "TPCDS_DB.date_dim"
+    "whybot.us_holidays"
    ],
    "status": "ok",
    "columns": [
-    "trip_date",
-    "trips",
+    "holiday_date",
     "holiday_name",
-    "d_day_name"
+    "is_national"
    ],
    "rows": [
     [
-     "2024-11-01",
-     137690,
-     null,
-     "Friday"
-    ],
-    [
-     "2024-11-02",
-     137723,
-     null,
-     "Saturday"
-    ],
-    [
-     "2024-11-03",
-     122355,
-     null,
-     "Sunday"
-    ],
-    [
-     "2024-11-04",
-     101625,
-     null,
-     "Monday"
-    ],
-    [
-     "2024-11-05",
-     97522,
-     null,
-     "Tuesday"
-    ],
-    [
-     "2024-11-06",
-     115498,
-     null,
-     "Wednesday"
-    ],
-    [
-     "2024-11-07",
-     130018,
-     null,
-     "Thursday"
-    ],
-    [
-     "2024-11-08",
-     129608,
-     null,
-     "Friday"
-    ],
-    [
-     "2024-11-09",
-     135547,
-     null,
-     "Saturday"
-    ],
-    [
-     "2024-11-10",
-     113594,
-     null,
-     "Sunday"
-    ],
-    [
-     "2024-11-11",
-     99824,
-     "Veterans Day",
-     "Monday"
-    ],
-    [
-     "2024-11-12",
-     127185,
-     null,
-     "Tuesday"
-    ],
-    [
-     "2024-11-13",
-     133298,
-     null,
-     "Wednesday"
-    ],
-    [
-     "2024-11-14",
-     141642,
-     null,
-     "Thursday"
-    ],
-    [
-     "2024-11-15",
-     139683,
-     null,
-     "Friday"
-    ],
-    [
-     "2024-11-16",
-     149939,
-     null,
-     "Saturday"
-    ],
-    [
-     "2024-11-17",
-     123375,
-     null,
-     "Sunday"
-    ],
-    [
-     "2024-11-18",
-     113449,
-     null,
-     "Monday"
-    ],
-    [
-     "2024-11-19",
-     125361,
-     null,
-     "Tuesday"
-    ],
-    [
-     "2024-11-20",
-     133043,
-     null,
-     "Wednesday"
-    ],
-    [
-     "2024-11-21",
-     153149,
-     null,
-     "Thursday"
-    ],
-    [
-     "2024-11-22",
-     150016,
-     null,
-     "Friday"
-    ],
-    [
-     "2024-11-23",
-     134768,
-     null,
-     "Saturday"
-    ],
-    [
-     "2024-11-24",
-     108373,
-     null,
-     "Sunday"
-    ],
-    [
-     "2024-11-25",
-     104082,
-     null,
-     "Monday"
-    ],
-    [
-     "2024-11-26",
-     114424,
-     null,
-     "Tuesday"
-    ],
-    [
-     "2024-11-27",
-     107719,
-     null,
-     "Wednesday"
-    ],
-    [
      "2024-11-28",
-     77244,
      "Thanksgiving Day",
-     "Thursday"
-    ],
-    [
-     "2024-11-29",
-     86461,
-     null,
-     "Friday"
-    ],
-    [
-     "2024-11-30",
-     102157,
-     null,
-     "Saturday"
+     1
     ]
    ],
-   "row_count": 30,
-   "elapsed_s": 15.473,
+   "row_count": 1,
+   "elapsed_s": 0.493,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT y.trip_date, y.trips, h.holiday_name, d.d_day_name FROM whybot.yellow_daily y LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:94c0d24079a12e2b",
+     "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2024-11-28' OR h.holiday_date IN (DATE '2024-11-21', DATE '2024-11-14', DATE '2024-11-07') ORDER BY h.holiday_date LIMIT 500",
+     "sql_hash": "sha256:3b8da082e4818926",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_2fc0aa561bda8bca",
+   "wm_fact_id": "fact_a8a9256f84f2c547",
    "truncated": false
   },
   {
    "qid": "Q3",
    "hypothesis_id": "H2",
-   "purpose": "Compare weather (prcp_mm, snow_mm, tmax_c, tmin_c) on 2024-11-28 vs. baseline Thursdays from nyc_weather_daily.",
+   "purpose": "Retrieve prcp_mm, snow_mm, tmax_c, tmin_c for 2024-11-28 and the three baseline Thursdays from whybot.nyc_weather_daily.",
    "iteration": 1,
-   "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_dow = 5 AND y.trip_date <> DATE '2024-11-28' THEN y.trips END) AS baseline_avg_trips, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.prcp_mm END) AS target_prcp_mm, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.snow_mm END) AS target_snow_mm, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.tmax_c END) AS target_tmax_c, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.tmin_c END) AS target_tmin_c FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:d9bb37cea5fb3cc8",
+   "sql": "SELECT obs_date, prcp_mm, snow_mm, tmax_c, tmin_c, CASE WHEN dayofweek(obs_date) = 5 THEN 'Thursday' ELSE NULL END AS weekday_name FROM whybot.nyc_weather_daily WHERE obs_date IN (DATE '2024-11-28', DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') ORDER BY obs_date LIMIT 500",
+   "sql_hash": "sha256:7e075b37004c19f4",
    "tables": [
-    "whybot.yellow_daily",
-    "whybot.nyc_weather_daily",
-    "TPCDS_DB.date_dim"
+    "whybot.nyc_weather_daily"
+   ],
+   "status": "ok",
+   "columns": [
+    "obs_date",
+    "prcp_mm",
+    "snow_mm",
+    "tmax_c",
+    "tmin_c",
+    "weekday_name"
+   ],
+   "rows": [
+    [
+     "2024-11-07",
+     0.0,
+     0,
+     22.8,
+     12.2,
+     "Thursday"
+    ],
+    [
+     "2024-11-14",
+     0.0,
+     0,
+     8.3,
+     2.8,
+     "Thursday"
+    ],
+    [
+     "2024-11-21",
+     39.9,
+     0,
+     12.2,
+     2.8,
+     "Thursday"
+    ],
+    [
+     "2024-11-28",
+     21.8,
+     0,
+     9.4,
+     5.6,
+     "Thursday"
+    ]
+   ],
+   "row_count": 4,
+   "elapsed_s": 0.728,
+   "source_label": "LIVE Zetaris Lightning (JDBC)",
+   "recorded_at": null,
+   "error": "",
+   "attempts": [
+    {
+     "sql": "SELECT obs_date, prcp_mm, snow_mm, tmax_c, tmin_c, CASE WHEN dayofweek(obs_date) = 5 THEN 'Thursday' ELSE NULL END AS weekday_name FROM whybot.nyc_weather_daily WHERE obs_date IN (DATE '2024-11-28', DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') ORDER BY obs_date LIMIT 500",
+     "sql_hash": "sha256:7e075b37004c19f4",
+     "error": ""
+    }
+   ],
+   "wm_fact_id": "fact_8770524b9fe55b0f",
+   "truncated": false
+  },
+  {
+   "qid": "Q4",
+   "hypothesis_id": "H3",
+   "purpose": "Compute average trips for all Thursdays in November 2024 (2024-11-01 to 2024-11-30) from whybot.yellow_daily, and flag 2024-11-28 as outlier.",
+   "iteration": 1,
+   "sql": "SELECT trip_date, date_format(trip_date,'EEEE') AS weekday_name, trips, CASE WHEN trip_date = DATE '2024-11-28' THEN 1 ELSE 0 END AS is_target_date FROM whybot.yellow_daily WHERE date_format(trip_date,'yyyy-MM') = '2024-11' AND date_format(trip_date,'EEEE') = 'Thursday' ORDER BY trip_date LIMIT 500",
+   "sql_hash": "sha256:74e2982efba47427",
+   "tables": [
+    "whybot.yellow_daily"
    ],
    "status": "ok",
    "columns": [
     "trip_date",
-    "target_trips",
-    "baseline_avg_trips",
-    "target_prcp_mm",
-    "target_snow_mm",
-    "target_tmax_c",
-    "target_tmin_c"
+    "weekday_name",
+    "trips",
+    "is_target_date"
+   ],
+   "rows": [
+    [
+     "2024-11-07",
+     "Thursday",
+     130018,
+     0
+    ],
+    [
+     "2024-11-14",
+     "Thursday",
+     141642,
+     0
+    ],
+    [
+     "2024-11-21",
+     "Thursday",
+     153149,
+     0
+    ],
+    [
+     "2024-11-28",
+     "Thursday",
+     77244,
+     1
+    ]
+   ],
+   "row_count": 4,
+   "elapsed_s": 8.168,
+   "source_label": "LIVE Zetaris Lightning (JDBC)",
+   "recorded_at": null,
+   "error": "",
+   "attempts": [
+    {
+     "sql": "SELECT trip_date, date_format(trip_date,'EEEE') AS weekday_name, trips, CASE WHEN trip_date = DATE '2024-11-28' THEN 1 ELSE 0 END AS is_target_date FROM whybot.yellow_daily WHERE date_format(trip_date,'yyyy-MM') = '2024-11' AND date_format(trip_date,'EEEE') = 'Thursday' ORDER BY trip_date LIMIT 500",
+     "sql_hash": "sha256:74e2982efba47427",
+     "error": ""
+    }
+   ],
+   "wm_fact_id": "fact_06e2f19faa313d28",
+   "truncated": false
+  },
+  {
+   "qid": "Q5",
+   "hypothesis_id": "H4",
+   "purpose": "Compare avg_trip_distance and avg_total_amount on 2024-11-28 vs baseline Thursdays from whybot.yellow_daily to detect fare/distance mix shift.",
+   "iteration": 1,
+   "sql": "SELECT trip_date, to_date(trip_date) AS trip_date_obj, CASE WHEN dayofweek(trip_date) = 5 THEN 'Thursday' ELSE NULL END AS weekday_label, MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN avg_total_amount END) AS target_avg_total_amount, MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN trip_date <> DATE '2024-11-28' AND dayofweek(trip_date) = 5 THEN avg_total_amount END) AS baseline_avg_total_amount, AVG(CASE WHEN trip_date <> DATE '2024-11-28' AND dayofweek(trip_date) = 5 THEN avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' GROUP BY trip_date ORDER BY trip_date LIMIT 100",
+   "sql_hash": "sha256:b5d62c48c85f3f77",
+   "tables": [
+    "whybot.yellow_daily"
+   ],
+   "status": "ok",
+   "columns": [
+    "trip_date",
+    "trip_date_obj",
+    "weekday_label",
+    "target_avg_total_amount",
+    "target_avg_trip_distance",
+    "baseline_avg_total_amount",
+    "baseline_avg_trip_distance"
    ],
    "rows": [
     [
      "2024-11-01",
+     "2024-11-01",
      null,
-     137690.0,
      null,
      null,
      null,
@@ -663,7 +385,7 @@
     ],
     [
      "2024-11-02",
-     null,
+     "2024-11-02",
      null,
      null,
      null,
@@ -672,7 +394,7 @@
     ],
     [
      "2024-11-03",
-     null,
+     "2024-11-03",
      null,
      null,
      null,
@@ -681,7 +403,7 @@
     ],
     [
      "2024-11-04",
-     null,
+     "2024-11-04",
      null,
      null,
      null,
@@ -690,7 +412,7 @@
     ],
     [
      "2024-11-05",
-     null,
+     "2024-11-05",
      null,
      null,
      null,
@@ -699,7 +421,7 @@
     ],
     [
      "2024-11-06",
-     null,
+     "2024-11-06",
      null,
      null,
      null,
@@ -708,17 +430,17 @@
     ],
     [
      "2024-11-07",
+     "2024-11-07",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     28.344273792857695,
+     3.249533679952007
     ],
     [
      "2024-11-08",
+     "2024-11-08",
      null,
-     129608.0,
      null,
      null,
      null,
@@ -726,7 +448,7 @@
     ],
     [
      "2024-11-09",
-     null,
+     "2024-11-09",
      null,
      null,
      null,
@@ -735,7 +457,7 @@
     ],
     [
      "2024-11-10",
-     null,
+     "2024-11-10",
      null,
      null,
      null,
@@ -744,7 +466,7 @@
     ],
     [
      "2024-11-11",
-     null,
+     "2024-11-11",
      null,
      null,
      null,
@@ -753,7 +475,7 @@
     ],
     [
      "2024-11-12",
-     null,
+     "2024-11-12",
      null,
      null,
      null,
@@ -762,7 +484,7 @@
     ],
     [
      "2024-11-13",
-     null,
+     "2024-11-13",
      null,
      null,
      null,
@@ -771,17 +493,17 @@
     ],
     [
      "2024-11-14",
+     "2024-11-14",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     28.70524837265613,
+     5.088759831123541
     ],
     [
      "2024-11-15",
+     "2024-11-15",
      null,
-     139683.0,
      null,
      null,
      null,
@@ -789,7 +511,7 @@
     ],
     [
      "2024-11-16",
-     null,
+     "2024-11-16",
      null,
      null,
      null,
@@ -798,7 +520,7 @@
     ],
     [
      "2024-11-17",
-     null,
+     "2024-11-17",
      null,
      null,
      null,
@@ -807,7 +529,7 @@
     ],
     [
      "2024-11-18",
-     null,
+     "2024-11-18",
      null,
      null,
      null,
@@ -816,7 +538,7 @@
     ],
     [
      "2024-11-19",
-     null,
+     "2024-11-19",
      null,
      null,
      null,
@@ -825,7 +547,7 @@
     ],
     [
      "2024-11-20",
-     null,
+     "2024-11-20",
      null,
      null,
      null,
@@ -834,17 +556,17 @@
     ],
     [
      "2024-11-21",
+     "2024-11-21",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     28.761140849758707,
+     4.552283854285692
     ],
     [
      "2024-11-22",
+     "2024-11-22",
      null,
-     150016.0,
      null,
      null,
      null,
@@ -852,7 +574,7 @@
     ],
     [
      "2024-11-23",
-     null,
+     "2024-11-23",
      null,
      null,
      null,
@@ -861,7 +583,7 @@
     ],
     [
      "2024-11-24",
-     null,
+     "2024-11-24",
      null,
      null,
      null,
@@ -870,7 +592,7 @@
     ],
     [
      "2024-11-25",
-     null,
+     "2024-11-25",
      null,
      null,
      null,
@@ -879,7 +601,7 @@
     ],
     [
      "2024-11-26",
-     null,
+     "2024-11-26",
      null,
      null,
      null,
@@ -888,7 +610,7 @@
     ],
     [
      "2024-11-27",
-     null,
+     "2024-11-27",
      null,
      null,
      null,
@@ -897,17 +619,17 @@
     ],
     [
      "2024-11-28",
-     77244,
+     "2024-11-28",
+     "Thursday",
+     25.322095955671823,
+     9.471360752938693,
      null,
-     21.8,
-     0,
-     9.4,
-     5.6
+     null
     ],
     [
      "2024-11-29",
+     "2024-11-29",
      null,
-     86461.0,
      null,
      null,
      null,
@@ -915,7 +637,7 @@
     ],
     [
      "2024-11-30",
-     null,
+     "2024-11-30",
      null,
      null,
      null,
@@ -924,7 +646,7 @@
     ],
     [
      "2024-12-01",
-     null,
+     "2024-12-01",
      null,
      null,
      null,
@@ -933,7 +655,7 @@
     ],
     [
      "2024-12-02",
-     null,
+     "2024-12-02",
      null,
      null,
      null,
@@ -942,7 +664,7 @@
     ],
     [
      "2024-12-03",
-     null,
+     "2024-12-03",
      null,
      null,
      null,
@@ -951,7 +673,7 @@
     ],
     [
      "2024-12-04",
-     null,
+     "2024-12-04",
      null,
      null,
      null,
@@ -960,17 +682,17 @@
     ],
     [
      "2024-12-05",
+     "2024-12-05",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     29.70562128901142,
+     4.605283096436819
     ],
     [
      "2024-12-06",
+     "2024-12-06",
      null,
-     147460.0,
      null,
      null,
      null,
@@ -978,7 +700,7 @@
     ],
     [
      "2024-12-07",
-     null,
+     "2024-12-07",
      null,
      null,
      null,
@@ -987,7 +709,7 @@
     ],
     [
      "2024-12-08",
-     null,
+     "2024-12-08",
      null,
      null,
      null,
@@ -996,7 +718,7 @@
     ],
     [
      "2024-12-09",
-     null,
+     "2024-12-09",
      null,
      null,
      null,
@@ -1005,7 +727,7 @@
     ],
     [
      "2024-12-10",
-     null,
+     "2024-12-10",
      null,
      null,
      null,
@@ -1014,7 +736,7 @@
     ],
     [
      "2024-12-11",
-     null,
+     "2024-12-11",
      null,
      null,
      null,
@@ -1023,17 +745,17 @@
     ],
     [
      "2024-12-12",
+     "2024-12-12",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     30.760707025000222,
+     4.428184002396263
     ],
     [
      "2024-12-13",
+     "2024-12-13",
      null,
-     159845.0,
      null,
      null,
      null,
@@ -1041,7 +763,7 @@
     ],
     [
      "2024-12-14",
-     null,
+     "2024-12-14",
      null,
      null,
      null,
@@ -1050,7 +772,7 @@
     ],
     [
      "2024-12-15",
-     null,
+     "2024-12-15",
      null,
      null,
      null,
@@ -1059,7 +781,7 @@
     ],
     [
      "2024-12-16",
-     null,
+     "2024-12-16",
      null,
      null,
      null,
@@ -1068,7 +790,7 @@
     ],
     [
      "2024-12-17",
-     null,
+     "2024-12-17",
      null,
      null,
      null,
@@ -1077,7 +799,7 @@
     ],
     [
      "2024-12-18",
-     null,
+     "2024-12-18",
      null,
      null,
      null,
@@ -1086,17 +808,17 @@
     ],
     [
      "2024-12-19",
+     "2024-12-19",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     27.918211830961518,
+     5.739164799800234
     ],
     [
      "2024-12-20",
+     "2024-12-20",
      null,
-     138973.0,
      null,
      null,
      null,
@@ -1104,7 +826,7 @@
     ],
     [
      "2024-12-21",
-     null,
+     "2024-12-21",
      null,
      null,
      null,
@@ -1113,7 +835,7 @@
     ],
     [
      "2024-12-22",
-     null,
+     "2024-12-22",
      null,
      null,
      null,
@@ -1122,7 +844,7 @@
     ],
     [
      "2024-12-23",
-     null,
+     "2024-12-23",
      null,
      null,
      null,
@@ -1131,7 +853,7 @@
     ],
     [
      "2024-12-24",
-     null,
+     "2024-12-24",
      null,
      null,
      null,
@@ -1140,7 +862,7 @@
     ],
     [
      "2024-12-25",
-     null,
+     "2024-12-25",
      null,
      null,
      null,
@@ -1149,17 +871,17 @@
     ],
     [
      "2024-12-26",
+     "2024-12-26",
+     "Thursday",
      null,
      null,
-     null,
-     null,
-     null,
-     null
+     28.658390408211044,
+     4.587885689844173
     ],
     [
      "2024-12-27",
+     "2024-12-27",
      null,
-     84802.0,
      null,
      null,
      null,
@@ -1167,7 +889,7 @@
     ],
     [
      "2024-12-28",
-     null,
+     "2024-12-28",
      null,
      null,
      null,
@@ -1176,7 +898,7 @@
     ],
     [
      "2024-12-29",
-     null,
+     "2024-12-29",
      null,
      null,
      null,
@@ -1185,7 +907,7 @@
     ],
     [
      "2024-12-30",
-     null,
+     "2024-12-30",
      null,
      null,
      null,
@@ -1194,7 +916,7 @@
     ],
     [
      "2024-12-31",
-     null,
+     "2024-12-31",
      null,
      null,
      null,
@@ -1203,447 +925,294 @@
     ]
    ],
    "row_count": 61,
-   "elapsed_s": 15.821,
+   "elapsed_s": 8.66,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_dow = 5 AND y.trip_date <> DATE '2024-11-28' THEN y.trips END) AS baseline_avg_trips, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.prcp_mm END) AS target_prcp_mm, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.snow_mm END) AS target_snow_mm, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.tmax_c END) AS target_tmax_c, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN w.tmin_c END) AS target_tmin_c FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:d9bb37cea5fb3cc8",
+     "sql": "SELECT trip_date, to_date(trip_date) AS trip_date_obj, CASE WHEN dayofweek(trip_date) = 5 THEN 'Thursday' ELSE NULL END AS weekday_label, MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN avg_total_amount END) AS target_avg_total_amount, MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN trip_date <> DATE '2024-11-28' AND dayofweek(trip_date) = 5 THEN avg_total_amount END) AS baseline_avg_total_amount, AVG(CASE WHEN trip_date <> DATE '2024-11-28' AND dayofweek(trip_date) = 5 THEN avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' GROUP BY trip_date ORDER BY trip_date LIMIT 100",
+     "sql_hash": "sha256:b5d62c48c85f3f77",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_3f945b3d9753e3b4",
-   "truncated": false
-  },
-  {
-   "qid": "Q4",
-   "hypothesis_id": "H3",
-   "purpose": "List trips for all Thursdays in Nov-Dec 2024 to assess if 28 Nov is an outlier.",
-   "iteration": 1,
-   "sql": "SELECT y.trip_date, y.trips, d.d_day_name FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 4 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:c7b820c245713f40",
-   "tables": [
-    "whybot.yellow_daily",
-    "TPCDS_DB.date_dim"
-   ],
-   "status": "ok",
-   "columns": [
-    "trip_date",
-    "trips",
-    "d_day_name"
-   ],
-   "rows": [
-    [
-     "2024-11-07",
-     130018,
-     "Thursday"
-    ],
-    [
-     "2024-11-14",
-     141642,
-     "Thursday"
-    ],
-    [
-     "2024-11-21",
-     153149,
-     "Thursday"
-    ],
-    [
-     "2024-11-28",
-     77244,
-     "Thursday"
-    ],
-    [
-     "2024-12-05",
-     148377,
-     "Thursday"
-    ],
-    [
-     "2024-12-12",
-     156911,
-     "Thursday"
-    ],
-    [
-     "2024-12-19",
-     144181,
-     "Thursday"
-    ],
-    [
-     "2024-12-26",
-     74814,
-     "Thursday"
-    ]
-   ],
-   "row_count": 8,
-   "elapsed_s": 15.377,
-   "source_label": "LIVE Zetaris Lightning (JDBC)",
-   "recorded_at": null,
-   "error": "",
-   "attempts": [
-    {
-     "sql": "SELECT y.trip_date, y.trips, d.d_day_name FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 4 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-12-31' ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:c7b820c245713f40",
-     "error": ""
-    }
-   ],
-   "wm_fact_id": "fact_373f65cc9f1c960e",
-   "truncated": false
-  },
-  {
-   "qid": "Q5",
-   "hypothesis_id": "H4",
-   "purpose": "Compare avg_trip_distance and avg_total_amount on 2024-11-28 vs. baseline Thursdays from yellow_daily.",
-   "iteration": 1,
-   "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_total_amount END) AS target_avg_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' THEN y.avg_total_amount END) AS baseline_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' THEN y.avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 5 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:e3804ba6b0f53613",
-   "tables": [
-    "whybot.yellow_daily",
-    "TPCDS_DB.date_dim"
-   ],
-   "status": "ok",
-   "columns": [
-    "trip_date",
-    "target_avg_total_amount",
-    "baseline_avg_total_amount",
-    "target_avg_trip_distance",
-    "baseline_avg_trip_distance"
-   ],
-   "rows": [
-    [
-     "2024-11-01",
-     null,
-     29.78241898467302,
-     null,
-     6.659148013653906
-    ],
-    [
-     "2024-11-08",
-     null,
-     28.208760261710488,
-     null,
-     4.015269273501627
-    ],
-    [
-     "2024-11-15",
-     null,
-     27.676276067952344,
-     null,
-     9.815712506174702
-    ],
-    [
-     "2024-11-22",
-     null,
-     27.431543702005467,
-     null,
-     4.444827485068259
-    ],
-    [
-     "2024-11-29",
-     null,
-     27.007803865326316,
-     null,
-     4.01485039497579
-    ]
-   ],
-   "row_count": 5,
-   "elapsed_s": 15.181,
-   "source_label": "LIVE Zetaris Lightning (JDBC)",
-   "recorded_at": null,
-   "error": "",
-   "attempts": [
-    {
-     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_total_amount END) AS target_avg_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' AND dayofweek(y.trip_date) = 5 THEN y.avg_total_amount END) AS baseline_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' AND dayofweek(y.trip_date) = 5 THEN y.avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 5 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:a8a183d60946ce9b",
-     "error": "RESULT SANITY CHECK FAILED: every row has identical values in all non-key columns although the keys differ: likely a cross join or a missing join/group key; join explicitly on the date key"
-    },
-    {
-     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_total_amount END) AS target_avg_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' THEN y.avg_total_amount END) AS baseline_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' THEN y.avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 5 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:e3804ba6b0f53613",
-     "error": ""
-    }
-   ],
-   "wm_fact_id": "fact_52487f92c16e3217",
+   "wm_fact_id": "fact_7c6e7bc5808ba185",
    "truncated": false
   },
   {
    "qid": "Q6",
    "hypothesis_id": "H5",
-   "purpose": "Verify data completeness for 2024-11-28: check yellow_daily row exists, trips not null/zero, and joins to weather/holidays succeed.",
+   "purpose": "Validate data quality for 2024-11-28: check trips > 0, avg_total_amount and avg_trip_distance not null, and values within historical min/max for November 2024.",
    "iteration": 1,
-   "sql": "SELECT y.trip_date, y.trips, w.prcp_mm, w.snow_mm, h.holiday_name, d.d_day_name FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:3a97a08fcc05d8bb",
+   "sql": "SELECT trip_date, trips, avg_total_amount, avg_trip_distance, CASE WHEN trips > 0 THEN 'OK' ELSE 'ZERO_TRIPS' END AS trips_status, CASE WHEN avg_total_amount IS NOT NULL AND avg_trip_distance IS NOT NULL THEN 'OK' ELSE 'NULL_VAL' END AS metrics_status FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY trip_date LIMIT 500",
+   "sql_hash": "sha256:682ceb42b3193218",
    "tables": [
-    "whybot.yellow_daily",
-    "whybot.nyc_weather_daily",
-    "whybot.us_holidays",
-    "TPCDS_DB.date_dim"
+    "whybot.yellow_daily"
    ],
    "status": "ok",
    "columns": [
     "trip_date",
     "trips",
-    "prcp_mm",
-    "snow_mm",
-    "holiday_name",
-    "d_day_name"
+    "avg_total_amount",
+    "avg_trip_distance",
+    "trips_status",
+    "metrics_status"
    ],
    "rows": [
     [
      "2024-11-01",
      137690,
-     0.0,
-     0,
-     null,
-     "Friday"
+     29.78241898467302,
+     6.659148013653906,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-02",
      137723,
-     0.0,
-     0,
-     null,
-     "Saturday"
+     25.27405139301215,
+     3.6773170058741083,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-03",
      122355,
-     0.0,
-     0,
-     null,
-     "Sunday"
+     27.237861468675764,
+     5.0281297045482045,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-04",
      101625,
-     0.0,
-     0,
-     null,
-     "Monday"
+     28.964102730625566,
+     6.158413185731879,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-05",
      97522,
-     0.0,
-     0,
-     null,
-     "Tuesday"
+     25.92090717991764,
+     5.842320604581528,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-06",
      115498,
-     0.0,
-     0,
-     null,
-     "Wednesday"
+     27.83884309684847,
+     3.638043602486627,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-07",
      130018,
-     0.0,
-     0,
-     null,
-     "Thursday"
+     28.344273792857695,
+     3.249533679952007,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-08",
      129608,
-     0.0,
-     0,
-     null,
-     "Friday"
+     28.208760261710488,
+     4.015269273501627,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-09",
      135547,
-     0.0,
-     0,
-     null,
-     "Saturday"
+     26.49636672150514,
+     4.62677447674978,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-10",
      113594,
-     2.0,
-     0,
-     null,
-     "Sunday"
+     28.422036815322716,
+     4.759317305491414,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-11",
      99824,
-     2.5,
-     0,
-     "Veterans Day",
-     "Monday"
+     29.616905854301844,
+     6.26233721349571,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-12",
      127185,
-     0.0,
-     0,
-     null,
-     "Tuesday"
+     28.388113378148624,
+     3.546785312733416,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-13",
      133298,
-     0.0,
-     0,
-     null,
-     "Wednesday"
+     28.674895422285143,
+     4.854073879578113,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-14",
      141642,
-     0.0,
-     0,
-     null,
-     "Thursday"
+     28.70524837265613,
+     5.088759831123541,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-15",
      139683,
-     0.0,
-     0,
-     null,
-     "Friday"
+     27.676276067952344,
+     9.815712506174702,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-16",
      149939,
-     0.0,
-     0,
-     null,
-     "Saturday"
+     25.453496288489518,
+     5.583773934733454,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-17",
      123375,
-     0.0,
-     0,
-     null,
-     "Sunday"
+     27.96683914893391,
+     9.611870070921942,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-18",
      113449,
-     0.0,
-     0,
-     null,
-     "Monday"
+     28.632313286144466,
+     8.8561170217454,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-19",
      125361,
-     0.0,
-     0,
-     null,
-     "Tuesday"
+     27.765153995260555,
+     5.289785659016817,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-20",
      133043,
-     0.0,
-     0,
-     null,
-     "Wednesday"
+     28.139382605621968,
+     3.1660659335703794,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-21",
      153149,
-     39.9,
-     0,
-     null,
-     "Thursday"
+     28.761140849758707,
+     4.552283854285692,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-22",
      150016,
-     13.5,
-     0,
-     null,
-     "Friday"
+     27.431543702005467,
+     4.444827485068259,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-23",
      134768,
-     0.5,
-     0,
-     null,
-     "Saturday"
+     25.555522898610267,
+     4.342309005105076,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-24",
      108373,
-     0.0,
-     0,
-     null,
-     "Sunday"
+     26.70390853810359,
+     9.636692626392149,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-25",
      104082,
-     0.0,
-     0,
-     null,
-     "Monday"
+     27.14774466286088,
+     4.368980227128659,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-26",
      114424,
-     4.8,
-     0,
-     null,
-     "Tuesday"
+     27.683115867299644,
+     5.175878836607746,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-27",
      107719,
-     0.0,
-     0,
-     null,
-     "Wednesday"
+     27.847100325847425,
+     3.2027093641789937,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-28",
      77244,
-     21.8,
-     0,
-     "Thanksgiving Day",
-     "Thursday"
+     25.322095955671823,
+     9.471360752938693,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-29",
      86461,
-     0.0,
-     0,
-     null,
-     "Friday"
+     27.007803865326316,
+     4.01485039497579,
+     "OK",
+     "OK"
     ],
     [
      "2024-11-30",
      102157,
-     0.0,
-     0,
-     null,
-     "Saturday"
+     28.040500406236696,
+     4.138207269203346,
+     "OK",
+     "OK"
     ]
    ],
    "row_count": 30,
-   "elapsed_s": 16.142,
+   "elapsed_s": 8.517,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT y.trip_date, y.trips, w.prcp_mm, w.snow_mm, h.holiday_name, d.d_day_name FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:3a97a08fcc05d8bb",
+     "sql": "SELECT trip_date, trips, avg_total_amount, avg_trip_distance, CASE WHEN trips > 0 THEN 'OK' ELSE 'ZERO_TRIPS' END AS trips_status, CASE WHEN avg_total_amount IS NOT NULL AND avg_trip_distance IS NOT NULL THEN 'OK' ELSE 'NULL_VAL' END AS metrics_status FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY trip_date LIMIT 500",
+     "sql_hash": "sha256:682ceb42b3193218",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_bf36081c74451ca4",
+   "wm_fact_id": "fact_5d77faebbf4cb4c0",
    "truncated": false
   },
   {
@@ -1651,8 +1220,8 @@
    "hypothesis_id": "data_quality",
    "purpose": "Critic check: TPCDS d_holiday vs Nager.Date national holidays",
    "iteration": 1,
-   "sql": "SELECT d.d_date AS cal_date, d.d_holiday AS tpcds_d_holiday, h.holiday_name AS nager_holiday FROM TPCDS_DB.date_dim d LEFT JOIN whybot.us_holidays h ON h.holiday_date = d.d_date AND h.is_national = true WHERE d.d_date BETWEEN DATE '2024-10-07' AND DATE '2025-01-26' AND (d.d_holiday = 'Y' OR h.holiday_name IS NOT NULL) ORDER BY d.d_date LIMIT 500",
-   "sql_hash": "sha256:e015551b785c48af",
+   "sql": "SELECT d.d_date AS cal_date, d.d_holiday AS tpcds_d_holiday, h.holiday_name AS nager_holiday FROM TPCDS_DB.date_dim d LEFT JOIN whybot.us_holidays h ON h.holiday_date = d.d_date AND h.is_national = true WHERE d.d_date BETWEEN DATE '2024-10-07' AND DATE '2024-12-29' AND (d.d_holiday = 'Y' OR h.holiday_name IS NOT NULL) ORDER BY d.d_date LIMIT 500",
+   "sql_hash": "sha256:ff7eddb0f4eb3255",
    "tables": [
     "TPCDS_DB.date_dim",
     "whybot.us_holidays"
@@ -1683,24 +1252,9 @@
      "2024-12-25",
      "Y",
      "Christmas Day"
-    ],
-    [
-     "2024-12-31",
-     "Y",
-     null
-    ],
-    [
-     "2025-01-01",
-     "Y",
-     "New Year's Day"
-    ],
-    [
-     "2025-01-20",
-     "N",
-     "Martin Luther King, Jr. Day"
     ]
    ],
-   "row_count": 7,
+   "row_count": 4,
    "elapsed_s": 0.0,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
@@ -1708,193 +1262,9 @@
    "attempts": [],
    "wm_fact_id": null,
    "truncated": false
-  },
-  {
-   "qid": "Q7",
-   "hypothesis_id": "H0",
-   "purpose": "Confirm metric quantification: target day trips vs baseline Thursday average using conditional aggregation (already run as Q1, re-specified for completeness).",
-   "iteration": 2,
-   "sql": "SELECT y.trip_date, MAX(CASE WHEN d.d_date = DATE '2024-11-28' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_date IN (DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-   "sql_hash": "sha256:92c3c0b8596de8c7",
-   "tables": [
-    "whybot.yellow_daily",
-    "TPCDS_DB.date_dim"
-   ],
-   "status": "ok",
-   "columns": [
-    "trip_date",
-    "target_trips",
-    "baseline_avg_trips"
-   ],
-   "rows": [
-    [
-     "2024-11-01",
-     null,
-     null
-    ],
-    [
-     "2024-11-02",
-     null,
-     null
-    ],
-    [
-     "2024-11-03",
-     null,
-     null
-    ],
-    [
-     "2024-11-04",
-     null,
-     null
-    ],
-    [
-     "2024-11-05",
-     null,
-     null
-    ],
-    [
-     "2024-11-06",
-     null,
-     null
-    ],
-    [
-     "2024-11-07",
-     null,
-     130018.0
-    ],
-    [
-     "2024-11-08",
-     null,
-     null
-    ],
-    [
-     "2024-11-09",
-     null,
-     null
-    ],
-    [
-     "2024-11-10",
-     null,
-     null
-    ],
-    [
-     "2024-11-11",
-     null,
-     null
-    ],
-    [
-     "2024-11-12",
-     null,
-     null
-    ],
-    [
-     "2024-11-13",
-     null,
-     null
-    ],
-    [
-     "2024-11-14",
-     null,
-     141642.0
-    ],
-    [
-     "2024-11-15",
-     null,
-     null
-    ],
-    [
-     "2024-11-16",
-     null,
-     null
-    ],
-    [
-     "2024-11-17",
-     null,
-     null
-    ],
-    [
-     "2024-11-18",
-     null,
-     null
-    ],
-    [
-     "2024-11-19",
-     null,
-     null
-    ],
-    [
-     "2024-11-20",
-     null,
-     null
-    ],
-    [
-     "2024-11-21",
-     null,
-     153149.0
-    ],
-    [
-     "2024-11-22",
-     null,
-     null
-    ],
-    [
-     "2024-11-23",
-     null,
-     null
-    ],
-    [
-     "2024-11-24",
-     null,
-     null
-    ],
-    [
-     "2024-11-25",
-     null,
-     null
-    ],
-    [
-     "2024-11-26",
-     null,
-     null
-    ],
-    [
-     "2024-11-27",
-     null,
-     null
-    ],
-    [
-     "2024-11-28",
-     77244,
-     null
-    ],
-    [
-     "2024-11-29",
-     null,
-     null
-    ],
-    [
-     "2024-11-30",
-     null,
-     null
-    ]
-   ],
-   "row_count": 30,
-   "elapsed_s": 13.761,
-   "source_label": "LIVE Zetaris Lightning (JDBC)",
-   "recorded_at": null,
-   "error": "",
-   "attempts": [
-    {
-     "sql": "SELECT y.trip_date, MAX(CASE WHEN d.d_date = DATE '2024-11-28' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_date IN (DATE '2024-11-07', DATE '2024-11-14', DATE '2024-11-21') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
-     "sql_hash": "sha256:92c3c0b8596de8c7",
-     "error": ""
-    }
-   ],
-   "wm_fact_id": "fact_ecd042d4b28c1b47",
-   "truncated": false
   }
  ],
- "iterations": 2,
+ "iterations": 1,
  "data_source": {
   "label": "LIVE Zetaris Lightning (JDBC)",
   "kind": "live"
@@ -1903,8 +1273,8 @@
   "recalled": [
    {
     "id": "mem-1",
-    "relevance": 0.393,
-    "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> insufficient_evidence: No measurable drop in NYC yellow taxi trips on 21 Dec 2024 despite snowfall (supported: none)",
+    "relevance": 0.365,
+    "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> answered: Saturday 21 Dec 2024 taxi trips were essentially unchanged despite heavy snowfall (supported: H0, H1, H3, H5, H6)",
     "tags": [
      "investigation"
     ],
@@ -1912,65 +1282,54 @@
    },
    {
     "id": "mem-7",
-    "relevance": 0.364,
-    "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> answered: Saturday 21 Dec 2024 taxi trips essentially unchanged despite heavy snowfall (supported: none)",
-    "tags": [
-     "investigation"
-    ],
-    "source": "agent:writer:recorded-example-2-snow-saturday"
-   },
-   {
-    "id": "mem-16",
-    "relevance": 0.328,
-    "content": "Investigation recorded-example-3-mlk-fare: Q='Why did the average total amount per yellow taxi trip jump on Monday 20 Jan 2025 compared with the other Mondays in January 2025?' -> answered: Yellow taxi fares jumped 36.5% on MLK Day Monday 20 Jan 2025 (supported: H0, H1)",
+    "relevance": 0.311,
+    "content": "Investigation recorded-example-3-mlk-fare: Q='Why did the average total amount per yellow taxi trip jump on Monday 20 Jan 2025 compared with the other Mondays in January 2025?' -> insufficient_evidence: Average fare jumped 36.5% on MLK Day, but root cause remains unclear (supported: H0, H1)",
     "tags": [
      "investigation"
     ],
     "source": "agent:writer:recorded-example-3-mlk-fare"
    },
    {
-    "id": "mem-12",
-    "relevance": 0.256,
-    "content": "Lesson (SQL repair on whybot.yellow_daily, TPCDS_DB.date_dim): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The' was fixed by: SELECT y.trip_date, MAX(CASE WHEN d.d_date = DATE '2024-12-21' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_date IN (DATE '2024-12-07', DATE '2024-12-14', DATE '2024-12-28') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date ",
+    "id": "mem-4",
+    "relevance": 0.202,
+    "content": "Lesson: avg_total_amount includes tip and surcharges; if analyzing base fare only, adjust the query to exclude those columns.",
+    "tags": [
+     "lesson"
+    ],
+    "source": "agent:writer:recorded-example-2-snow-saturday"
+   },
+   {
+    "id": "mem-8",
+    "relevance": 0.197,
+    "content": "Lesson: Aggregate yellow_daily tables often omit location IDs; always check schema before attempting zone-mix analysis.",
+    "tags": [
+     "lesson"
+    ],
+    "source": "agent:writer:recorded-example-3-mlk-fare"
+   },
+   {
+    "id": "mem-6",
+    "relevance": 0.195,
+    "content": "Lesson (SQL repair on whybot.us_holidays): error 'RESULT SANITY CHECK FAILED: query returned 0 rows (check filters and date formats)' was fixed by: SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2024-12-20' OR h.holiday_date = DATE '2024-12-23' ORDER BY h.holiday_date LIMIT 500",
     "tags": [
      "lesson",
      "sql_repair"
     ],
     "source": "agent:executor:recorded-example-2-snow-saturday"
-   },
-   {
-    "id": "mem-8",
-    "relevance": 0.22,
-    "content": "Lesson: Schema quirk: yellow_daily aggregates trips by date; snowfall and holiday checks require joins across weather, holiday, and date_dim tables.",
-    "tags": [
-     "lesson"
-    ],
-    "source": "agent:writer:recorded-example-2-snow-saturday"
-   },
-   {
-    "id": "mem-4",
-    "relevance": 0.212,
-    "content": "Lesson: Filter precision: holiday flags in TPCDS date_dim differ from external holiday sources; verify flag semantics before relying on them.",
-    "tags": [
-     "lesson"
-    ],
-    "source": "agent:writer:recorded-example-2-snow-saturday"
    }
   ],
   "meterless": true
  },
  "data_quality_notes": [
-  "2024-10-14: TPCDS date_dim.d_holiday=N but Nager.Date says Columbus Day (national holiday) [DQ1 sha256:e015551b785c48af]",
-  "2024-11-11: TPCDS date_dim.d_holiday=N but Nager.Date says Veterans Day (national holiday) [DQ1 sha256:e015551b785c48af]",
-  "2024-11-28: TPCDS date_dim.d_holiday=N but Nager.Date says Thanksgiving Day (national holiday) [DQ1 sha256:e015551b785c48af]",
-  "2024-12-31: TPCDS date_dim.d_holiday=Y but Nager.Date says no national holiday [DQ1 sha256:e015551b785c48af]",
-  "2025-01-20: TPCDS date_dim.d_holiday=N but Nager.Date says Martin Luther King, Jr. Day (national holiday) [DQ1 sha256:e015551b785c48af]"
+  "2024-10-14: TPCDS date_dim.d_holiday=N but Nager.Date says Columbus Day (national holiday) [DQ1 sha256:ff7eddb0f4eb3255]",
+  "2024-11-11: TPCDS date_dim.d_holiday=N but Nager.Date says Veterans Day (national holiday) [DQ1 sha256:ff7eddb0f4eb3255]",
+  "2024-11-28: TPCDS date_dim.d_holiday=N but Nager.Date says Thanksgiving Day (national holiday) [DQ1 sha256:ff7eddb0f4eb3255]"
  ],
  "run_id": "recorded-example-1-thanksgiving",
  "question": "Why did NYC yellow taxi trips drop on Thursday 28 Nov 2024 compared with the surrounding weeks?",
  "trace_id": "recorded-example-1-thanksgiving",
  "log_file": "logs/recorded-example-1-thanksgiving.jsonl",
- "execution_time_seconds": 778.6,
+ "execution_time_seconds": 290.9,
  "agents": [
   {
    "name": "Planner",
@@ -2004,8 +1363,8 @@
   }
  ],
  "wall_clock": {
-  "started_at": "2026-10-23T14:50:10+00:00",
-  "finished_at": "2026-10-23T15:03:09+00:00",
-  "seconds": 778.6
+  "started_at": "2026-10-22T17:59:53+00:00",
+  "finished_at": "2026-10-22T18:04:44+00:00",
+  "seconds": 290.9
  }
 }
