@@ -1,0 +1,51 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT d.d_date AS cal_date, d.d_holiday AS tpcds_d_holiday, h.holiday_name AS nager_holiday FROM TPCDS_DB.date_dim d LEFT JOIN whybot.us_holidays h ON h.holiday_date = d.d_date AND h.is_national = true WHERE d.d_date BETWEEN DATE '2024-10-07' AND DATE '2025-01-26' AND (d.d_holiday = 'Y' OR h.holiday_name IS NOT NULL) ORDER BY d.d_date LIMIT 500",
+ "sql_hash": "sha256:e015551b785c48af",
+ "recorded_at": "2026-10-23T14:54:15+00:00",
+ "columns": [
+  "cal_date",
+  "tpcds_d_holiday",
+  "nager_holiday"
+ ],
+ "rows": [
+  [
+   "2024-10-14",
+   "N",
+   "Columbus Day"
+  ],
+  [
+   "2024-11-11",
+   "N",
+   "Veterans Day"
+  ],
+  [
+   "2024-11-28",
+   "N",
+   "Thanksgiving Day"
+  ],
+  [
+   "2024-12-25",
+   "Y",
+   "Christmas Day"
+  ],
+  [
+   "2024-12-31",
+   "Y",
+   null
+  ],
+  [
+   "2025-01-01",
+   "Y",
+   "New Year's Day"
+  ],
+  [
+   "2025-01-20",
+   "N",
+   "Martin Luther King, Jr. Day"
+  ]
+ ],
+ "elapsed_s": 6.957,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 7
+}

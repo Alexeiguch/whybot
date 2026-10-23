@@ -1,0 +1,53 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_total_amount END) AS target_avg_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' AND dayofweek(y.trip_date) = 5 THEN y.avg_total_amount END) AS baseline_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' AND dayofweek(y.trip_date) = 5 THEN y.avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 5 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:a8a183d60946ce9b",
+ "recorded_at": "2026-10-23T14:53:13+00:00",
+ "columns": [
+  "trip_date",
+  "target_avg_total_amount",
+  "baseline_avg_total_amount",
+  "target_avg_trip_distance",
+  "baseline_avg_trip_distance"
+ ],
+ "rows": [
+  [
+   "2024-11-01",
+   null,
+   null,
+   null,
+   null
+  ],
+  [
+   "2024-11-08",
+   null,
+   null,
+   null,
+   null
+  ],
+  [
+   "2024-11-15",
+   null,
+   null,
+   null,
+   null
+  ],
+  [
+   "2024-11-22",
+   null,
+   null,
+   null,
+   null
+  ],
+  [
+   "2024-11-29",
+   null,
+   null,
+   null,
+   null
+  ]
+ ],
+ "elapsed_s": 14.494,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 5
+}
