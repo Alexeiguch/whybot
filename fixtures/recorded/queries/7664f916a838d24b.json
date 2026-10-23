@@ -1,0 +1,36 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT w.obs_date, MAX(CASE WHEN d.d_dow = 6 AND d.d_date = DATE '2024-12-21' THEN w.snow_mm END) AS target_snow_mm, AVG(CASE WHEN d.d_dow = 6 AND d.d_date <> DATE '2024-12-21' THEN w.snow_mm END) AS baseline_avg_snow_mm FROM whybot.nyc_weather_daily w JOIN whybot.yellow_daily y ON y.trip_date = w.obs_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-12-01' AND DATE '2024-12-31' AND d.d_dow = 6 GROUP BY w.obs_date ORDER BY w.obs_date LIMIT 500",
+ "sql_hash": "sha256:7664f916a838d24b",
+ "recorded_at": "2026-10-23T13:20:09+00:00",
+ "columns": [
+  "obs_date",
+  "target_snow_mm",
+  "baseline_avg_snow_mm"
+ ],
+ "rows": [
+  [
+   "2024-12-07",
+   null,
+   0.0
+  ],
+  [
+   "2024-12-14",
+   null,
+   0.0
+  ],
+  [
+   "2024-12-21",
+   46,
+   null
+  ],
+  [
+   "2024-12-28",
+   null,
+   0.0
+  ]
+ ],
+ "elapsed_s": 15.792,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}
