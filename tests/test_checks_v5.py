@@ -103,3 +103,67 @@ def test_analyst_and_writer_prompts_get_units_only_from_v5():
 def test_catalog_note_says_distances_are_miles():
     notes = json.loads(open("whybot/catalog_notes.json").read())
     assert "MILES" in notes["whybot.yellow_daily"] and "never write km" in notes["whybot.yellow_daily"]
+
+
+# ---- (b) a value labelled average / mean / baseline is the aggregate of the cited rows ----------------------------------------
+from whybot.checks import check_aggregate_labels  # noqa: E402
+
+THURSDAYS = Evidence(qid="Q1", hypothesis_id="H0", purpose="p", iteration=1, status="ok", sql_hash="sha256:t",
+                     columns=["trip_date", "trips", "avg_trip_distance", "avg_total_amount"], tables=["whybot.yellow_daily"],
+                     rows=[["2024-11-07", 130018, 3.25, 28.34], ["2024-11-14", 141642, 5.09, 28.71], ["2024-11-21", 153149, 4.55, 28.76],
+                           ["2024-11-28", 77244, 9.47, 25.32]], row_count=4)
+# v4 take-1 #1: the SQL agent named per-day counts baseline_avg_trips
+MISNAMED = Evidence(qid="Q2", hypothesis_id="H0", purpose="p", iteration=1, status="ok", sql_hash="sha256:m",
+                    columns=["trip_date", "target_trips", "baseline_avg_trips"], tables=["whybot.yellow_daily"],
+                    rows=[["2024-11-07", None, 130018.0], ["2024-11-14", None, 141642.0], ["2024-11-21", None, 153149.0], ["2024-11-28", 77244, None]])
+ONE_VALUE = Evidence(qid="Q3", hypothesis_id="H0", purpose="p", iteration=1, status="ok", sql_hash="sha256:o",
+                     columns=["target_trips", "baseline_avg_trips"], tables=["whybot.yellow_daily"], rows=[[77244, 141603.0]])
+TEV = {"Q1": THURSDAYS, "Q2": MISNAMED, "Q3": ONE_VALUE}
+
+
+@pytest.mark.parametrize("text", [
+    "Trips fell 45.5% versus the mean of the three prior Thursdays (77,244 trips vs. baseline average of 141,642).",  # v4 take-1 #1
+    "baseline Thursdays averaged 141,642 trips",
+    "the mean of 141,642 trips",
+    "fares fell from a baseline of 28.71 to 25.32",     # one Thursday's fare, not the mean (28.60)
+    "trips were 77,244 vs a 141,700 baseline",
+])
+def test_a_single_rows_value_labelled_as_the_average_is_flagged(text):
+    probs = check_aggregate_labels(text, TEV, {"Q1", "Q2"})
+    assert probs and "not the average" in probs[0], probs
+
+
+def test_the_flag_names_the_true_aggregate():
+    p = check_aggregate_labels("vs. baseline average of 141,642", TEV, {"Q1"})[0]
+    assert "141,603" in p
+
+
+@pytest.mark.parametrize("text, qids", [
+    ("77,244 trips vs. baseline average of 141,603", {"Q1"}),                  # mean of the three prior Thursdays
+    ("the baseline averaged 141.6k trips", {"Q1"}),                             # stated precision 0.1k
+    ("about 141,600 trips on a baseline average", {"Q1"}),
+    ("distance rose (from ~4.3 miles baseline to 9.47 miles)", {"Q1"}),        # 4.30 = mean of the others; 9.47 is not labelled
+    ("average fare 25.32 on 2024-11-28", {"Q1"}),                               # a per-row avg_ column, plain 'average'
+    ("the baseline average was 141,603", {"Q3"}),                               # a one-value aggregate column
+    ("baseline trip counts: 130,018, 141,642, 153,149", {"Q1"}),               # a list of the baseline rows
+    ("the baseline Thursday 2024-11-14 had 141,642 trips", {"Q1"}),            # one named baseline day
+    ("Trips were -45.5% vs the mean of the three prior Thursdays", {"Q1"}),    # a %, checked by the derived-value check
+])
+def test_true_aggregates_and_unlabelled_values_pass(text, qids):
+    assert check_aggregate_labels(text, TEV, qids) == []
+
+
+def test_a_verified_derived_value_backs_an_average():
+    assert check_aggregate_labels("mean of the other Thursdays was 141,603.3", TEV, {"Q2"}, derived=[141603.33]) == []
+
+
+def test_aggregate_labels_are_checked_in_claims_and_the_answer_only_from_v5():
+    c = Claim(cid="C1", hypothesis_id="H0", statement="77,244 trips vs. baseline average of 141,642", direction="supports",
+              cited_values=[CitedValue(qid="Q2", column="target_trips", value=77244, row_hint="trip_date=2024-11-28"),
+                            CitedValue(qid="Q2", column="baseline_avg_trips", value=141642.0, row_hint="trip_date=2024-11-14")])
+    assert check_claim_numbers(c.model_copy(deep=True), TEV, version=4).ok
+    assert any("not the average" in p for p in check_claim_numbers(c.model_copy(deep=True), TEV, version=5).problems)
+    ans = FinalAnswer(headline="h", answer="77,244 trips vs. baseline average of 141,642.", recommendation="r", confidence=0.9,
+                      claims=[FinalClaim(text="t", citations=[Citation(qid="Q1", sql_hash="sha256:t", table="whybot.yellow_daily")])])
+    assert not any("not the average" in p for p in validate_final(ans, TEV, {"Q1"}, [], version=4))
+    assert any("not the average" in p for p in validate_final(ans, TEV, {"Q1"}, [], version=5))

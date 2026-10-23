@@ -22,7 +22,8 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      (TPCDS d_dow is 0=Sunday..6=Saturday); the Critic may not mark a claim that matches its rows unsupported only
 #      because it refutes its hypothesis
 #   5: units: a number or unit word must match the unit of its column (TLC distances are miles, never km); the Analyst
-#      and Writer prompts list the column units
+#      and Writer prompts list the column units; a value labelled average/mean/baseline must equal an aggregate of the
+#      cited rows (to its stated precision), not just appear somewhere in them
 CHECKS_VERSION = 5
 
 
@@ -125,7 +126,9 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
     if version >= 2:
         problems += check_comparisons(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
     if version >= 5:
-        problems += check_units(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
+        qids = {cv.qid for cv in claim.cited_values}
+        problems += check_units(claim.statement, evidence, qids)
+        problems += check_aggregate_labels(claim.statement, evidence, qids, [d.value for d in claim.derived])
     return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
@@ -389,6 +392,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
     if version >= 5:
         problems += check_units("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
                                 evidence, allowed_qids)
+        problems += check_aggregate_labels("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation]),
+                                           evidence, allowed_qids, extra_values)
     if version >= 3 and supported_statements is not None:
         problems += check_causes(ans.headline + ".\n" + ans.answer, list(supported_statements))
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
@@ -896,4 +901,84 @@ def check_units(text: str, evidence: dict[str, Evidence], qids: set[str]) -> lis
             flagged.add(unit)
             c = next(c for _, c, u, _ in cols if u in same_dim)
             problems.append(f"the answer writes {m.group(0).strip()!r} but {c} is in {UNIT_LABEL[same_dim[0]]}")
+    return list(dict.fromkeys(problems))
+
+
+# ---- v5: a value labelled average / mean / baseline must be that aggregate ------------------------------------------------
+_AGG_WORD = r"baseline|mean|average|averag(?:ed|es|ing)|avg|typical"
+_CROSS_ROW = re.compile(r"baseline|typical|mean\s+of|average\s+of|averag(?:ed|es|ing)\b", re.I)
+_AGG_STOP = (r"(?:to|vs|versus|than|compared|while|whereas|but|and|from|against|on|for|in|range|between|min\w*|max\w*|low\w*|high\w*|"
+             r"each|individual|single|rows?|dates?|days?|weeks?|\w+days?|weekends?|values?|cells?|counts?|figures?|numbers?|levels?|readings?)\b")
+_AGG_BEFORE = re.compile(rf"\b(?P<w>{_AGG_WORD})\b(?P<gap>(?:\W+(?!\d|{_AGG_STOP})\w+){{0,3}})[^\w]*~?\$?$", re.I)
+_AGG_AFTER = re.compile(rf"^\s?(?:{_UNIT_ALT})?\s*(?P<w>{_AGG_WORD})\b", re.I)
+_AGG_COL = re.compile(r"baseline|mean|avg|average|typical", re.I)
+_PERROW_COL = re.compile(r"^avg_|_avg$|^mean_", re.I)
+
+
+def _stated_tolerance(raw: str, suffix: str) -> float:
+    """Half a unit of the last stated digit: 141,642 -> 0.5; 4.3 -> 0.05; 141,600 -> 50; 141.6k -> 50."""
+    s = raw.replace(",", "")
+    if "." in s:
+        t = 0.5 * 10 ** -len(s.split(".")[1])
+    else:
+        z = len(s) - len(s.rstrip("0")) if len(s) >= 4 else 0
+        t = 0.5 * 10 ** z
+    return t * 1000 if suffix == "k" else t
+
+
+def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[str], derived=()) -> list[str]:
+    """A number labelled average, mean or baseline ('baseline average of 141,642', '~4.3 miles baseline') must equal, to its
+    stated precision, an aggregate of the cited rows: the mean of a numeric column over all rows or all rows but one (the
+    target day), a verified derived value, or the single value of a column that is itself an aggregate (a one-value
+    baseline_avg_trips; for a plain 'average' also a per-row avg_ column). Appearing somewhere in the results is not enough: 141,642 is one
+    Thursday's count, not the mean of the three."""
+    aggs, agg_cells, perrow_cells = [abs(float(d)) for d in derived if d is not None], [], []
+    for q in sorted(qids):
+        ev = evidence.get(q)
+        if not ev or ev.status != "ok":
+            continue
+        for i, c in enumerate(ev.columns):
+            vals = [_num(r[i]) for r in ev.rows]
+            vals = [v for v in vals if v is not None]
+            if not vals:
+                continue
+            # an aggregate-named column is an aggregate only when it holds one value; per-day values in a column the SQL
+            # agent named baseline_avg_trips are still single days
+            if _AGG_COL.search(c) and not _PERROW_COL.search(c) and len(set(vals)) == 1:
+                agg_cells += vals
+            elif _AGG_COL.search(c):
+                perrow_cells += vals
+            if len(vals) >= 2:
+                aggs.append(sum(vals) / len(vals))
+                if len(vals) >= 3:
+                    aggs += [(sum(vals) - v) / (len(vals) - 1) for v in vals]
+    blanked = _DATE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    problems = []
+    for sent_m in re.finditer(r"[^.;!?\n]+(?:[.;!?](?!\d)|$)|[^\n]+", blanked):
+        sent, base = sent_m.group(0), sent_m.start()
+        prev_end = 0
+        for m in _NUM_RE.finditer(sent):
+            raw, suf = m.group(1), (m.group(2) or "").lower()
+            before, after = sent[prev_end:m.start()], sent[m.end():]
+            prev_end = m.end()
+            if suf in ("%", "x", "\u00d7"):
+                continue
+            lab = _AGG_BEFORE.search(before)
+            lab_a = _AGG_AFTER.search(after)
+            if not lab and not lab_a or re.match(r"\s?(?:[A-Za-z]+\s?)?,\s*[-+~$]?\d", after):
+                continue  # no label, or the first value of a list ('baseline: 80127, 100492, 93060')
+            label = ((lab.group(0) if lab else "") + " " + (lab_a.group("w") if lab_a else "")).strip()
+            val = abs(float(raw.replace(",", ""))) * (1000 if suf == "k" else 1)
+            if "." not in raw and val <= 12 and not suf:
+                continue
+            tol = _stated_tolerance(raw, suf) + 1e-9
+            pool = aggs + agg_cells + ([] if _CROSS_ROW.search(label) else perrow_cells)
+            if any(abs(val - a) <= tol for a in pool):
+                continue
+            near = min(aggs, key=lambda a: abs(a - val), default=None)
+            hint = f"; the nearest aggregate of the cited rows is {near:,.2f}" if near is not None else ""
+            shown = text[base + m.start():base + m.end()].strip()
+            problems.append(f"'{shown}' is labelled {label.split()[0].lower()!r} but is not the average of the cited rows "
+                            f"(a single row's value or a wrong mean){hint}: declare the average in derived with a formula, "
+                            f"or drop the label")
     return list(dict.fromkeys(problems))
