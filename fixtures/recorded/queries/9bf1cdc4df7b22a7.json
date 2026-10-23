@@ -1,0 +1,35 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.avg_total_amount, h.holiday_name, CASE WHEN h.holiday_name IS NOT NULL THEN 'holiday' ELSE 'regular' END AS day_type FROM whybot.yellow_daily y LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date WHERE y.trip_date IN (DATE '2025-01-13', DATE '2025-01-20', DATE '2025-01-27') ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:9bf1cdc4df7b22a7",
+ "recorded_at": "2026-10-23T10:19:24+00:00",
+ "columns": [
+  "trip_date",
+  "avg_total_amount",
+  "holiday_name",
+  "day_type"
+ ],
+ "rows": [
+  [
+   "2025-01-13",
+   26.1535106277113,
+   null,
+   "regular"
+  ],
+  [
+   "2025-01-20",
+   36.480323772947045,
+   "Martin Luther King, Jr. Day",
+   "holiday"
+  ],
+  [
+   "2025-01-27",
+   26.388509993551974,
+   null,
+   "regular"
+  ]
+ ],
+ "elapsed_s": 9.167,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 3
+}

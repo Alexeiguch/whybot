@@ -1,0 +1,8 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.trips, y.avg_total_amount, y.avg_trip_distance, CASE WHEN h.holiday_date IS NOT NULL THEN 'YES' ELSE 'NO' END AS is_holiday FROM whybot.yellow_daily y LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' AND (y.trip_date - DATE '2025-01-01') % 7 = 0 ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:f85f711c4be717eb",
+ "recorded_at": "2026-10-23T10:24:36+00:00",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[DATATYPE_MISMATCH.BINARY_OP_DIFF_TYPES] Cannot resolve \"((trip_date - DATE '2025-01-01') % 7)\" due to data type mismatch: the left and right operands of the binary operator have incompatible types (\"INTERVAL DAY\" and \"INT\").; line 1 pos 306;\n'GlobalLimit 500\n+- 'LocalLimit 500\n   +- 'Sort ['y.trip_date ASC NULLS FIRST], true\n      +- 'Project ['y.trip_date, 'y.trips, 'y.avg_total_amount, 'y.avg_trip_distance, CASE WHEN isnotnull('h.holiday_date) THEN YES ELSE NO END AS is_ho",
+ "label": "LIVE Zetaris Lightning (JDBC)"
+}

@@ -1,0 +1,25 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.trips, w.prcp_mm, d.d_day_name, CASE WHEN h.holiday_date IS NOT NULL THEN 'federal_holiday' ELSE 'non_holiday' END AS holiday_status FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date LEFT JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-04-01' AND DATE '2025-02-28' AND d.d_dow = 4 AND w.prcp_mm > 20 AND h.holiday_date IS NULL ORDER BY y.trip_date LIMIT 50",
+ "sql_hash": "sha256:c5718870aaa8258d",
+ "recorded_at": "2026-10-23T10:37:27+00:00",
+ "columns": [
+  "trip_date",
+  "trips",
+  "prcp_mm",
+  "d_day_name",
+  "holiday_status"
+ ],
+ "rows": [
+  [
+   "2024-11-21",
+   153149,
+   39.9,
+   "Thursday",
+   "non_holiday"
+  ]
+ ],
+ "elapsed_s": 16.704,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 1
+}

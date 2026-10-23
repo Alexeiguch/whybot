@@ -1,0 +1,59 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.trips, d.d_day_name, h.holiday_name, MAX(CASE WHEN y.trip_date = DATE '2024-11-28' THEN y.trips END) OVER () AS target_trips, AVG(CASE WHEN y.trip_date <> DATE '2024-11-28' THEN y.trips END) OVER () AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' AND d.d_dow = 5 ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:608cff4afa8d1a81",
+ "recorded_at": "2026-10-23T10:32:02+00:00",
+ "columns": [
+  "trip_date",
+  "trips",
+  "d_day_name",
+  "holiday_name",
+  "target_trips",
+  "baseline_avg_trips"
+ ],
+ "rows": [
+  [
+   "2024-11-01",
+   137690,
+   "Friday",
+   null,
+   null,
+   128691.6
+  ],
+  [
+   "2024-11-08",
+   129608,
+   "Friday",
+   null,
+   null,
+   128691.6
+  ],
+  [
+   "2024-11-15",
+   139683,
+   "Friday",
+   null,
+   null,
+   128691.6
+  ],
+  [
+   "2024-11-22",
+   150016,
+   "Friday",
+   null,
+   null,
+   128691.6
+  ],
+  [
+   "2024-11-29",
+   86461,
+   "Friday",
+   null,
+   null,
+   128691.6
+  ]
+ ],
+ "elapsed_s": 16.272,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 5
+}

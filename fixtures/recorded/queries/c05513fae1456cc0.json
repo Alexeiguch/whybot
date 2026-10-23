@@ -2,7 +2,7 @@
  "source": "zetaris",
  "sql": "SELECT d.d_date AS cal_date, d.d_holiday AS tpcds_d_holiday, h.holiday_name AS nager_holiday FROM TPCDS_DB.date_dim d LEFT JOIN whybot.us_holidays h ON h.holiday_date = d.d_date AND h.is_national = true WHERE d.d_date BETWEEN DATE '2024-11-06' AND DATE '2025-01-28' AND (d.d_holiday = 'Y' OR h.holiday_name IS NOT NULL) ORDER BY d.d_date LIMIT 500",
  "sql_hash": "sha256:c05513fae1456cc0",
- "recorded_at": "2026-10-22T14:11:49+00:00",
+ "recorded_at": "2026-10-23T10:12:13+00:00",
  "columns": [
   "cal_date",
   "tpcds_d_holiday",
@@ -40,7 +40,7 @@
    "Martin Luther King, Jr. Day"
   ]
  ],
- "elapsed_s": 7.447,
+ "elapsed_s": 6.794,
  "label": "LIVE Zetaris Lightning (JDBC)",
  "rows_total": 6
 }

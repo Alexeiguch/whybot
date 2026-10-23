@@ -1,0 +1,8 @@
+{
+ "source": "zetaris",
+ "sql": "WITH thursdays AS ( SELECT trip_date, trips FROM whybot.yellow_daily WHERE d_dow = 4 AND trip_date BETWEEN DATE '2024-04-01' AND DATE '2025-02-28' ), weather AS ( SELECT obs_date, prcp_mm FROM whybot.nyc_weather_daily ), holidays AS ( SELECT holiday_date FROM whybot.us_holidays WHERE is_national = true ) SELECT t.trip_date, t.trips, w.prcp_mm, CASE WHEN h.holiday_date IS NOT NULL THEN 'federal_holiday' ELSE 'non_holiday' END AS holiday_status FROM thursdays t LEFT JOIN weather w ON w.obs_date = t.trip_date LEFT JOIN holidays h ON h.holiday_date = t.trip_date WHERE w.prcp_mm > 20 AND h.holiday_date IS NULL ORDER BY t.trip_date LIMIT 50",
+ "sql_hash": "sha256:3cc4d6e01f78c1f2",
+ "recorded_at": "2026-10-23T10:36:35+00:00",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `d_dow` cannot be resolved. Did you mean one of the following? [`trips`, `trip_date`, `avg_total_amount`, `avg_trip_distance`].; line 1 pos 75;\n'WithCTE\n:- 'CTERelationDef 0, false\n:  +- 'SubqueryAlias thursdays\n:     +- 'Project ['trip_date, 'trips]\n:        +- 'Filter (('d_dow = 4) AND ((trip_date#17031 >= 2024-04-01) AND (trip_date#17031 <= 2025-02-28)))\n:           +- SchemaStoreViewNode `whybot`",
+ "label": "LIVE Zetaris Lightning (JDBC)"
+}

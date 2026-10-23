@@ -1,0 +1,51 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.trips, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date WHERE y.trip_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:d57a7a7553806ec1",
+ "recorded_at": "2026-10-23T10:19:37+00:00",
+ "columns": [
+  "trip_date",
+  "trips",
+  "prcp_mm",
+  "snow_mm",
+  "tmax_c",
+  "tmin_c"
+ ],
+ "rows": [
+  [
+   "2025-01-06",
+   80127,
+   2.0,
+   23,
+   -1.0,
+   -5.5
+  ],
+  [
+   "2025-01-13",
+   100492,
+   0.0,
+   0,
+   5.6,
+   0.6
+  ],
+  [
+   "2025-01-20",
+   90094,
+   0.0,
+   0,
+   -3.2,
+   -8.2
+  ],
+  [
+   "2025-01-27",
+   93060,
+   0.0,
+   0,
+   4.4,
+   -0.5
+  ]
+ ],
+ "elapsed_s": 9.769,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

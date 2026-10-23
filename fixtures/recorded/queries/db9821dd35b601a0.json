@@ -1,0 +1,17 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.avg_trip_distance AS avg_dist, y.avg_total_amount AS avg_amount, w.snow_mm, d.d_day_name FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date LEFT JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-12-01' AND DATE '2024-12-31' AND d_dow = 7 ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:db9821dd35b601a0",
+ "recorded_at": "2026-10-23T10:11:47+00:00",
+ "columns": [
+  "trip_date",
+  "avg_dist",
+  "avg_amount",
+  "snow_mm",
+  "d_day_name"
+ ],
+ "rows": [],
+ "elapsed_s": 15.13,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 0
+}

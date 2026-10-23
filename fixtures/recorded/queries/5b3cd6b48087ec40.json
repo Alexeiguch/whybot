@@ -1,0 +1,41 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.avg_trip_distance AS avg_dist, y.avg_total_amount AS avg_amount, d.d_day_name FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_dow = 4 AND y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:5b3cd6b48087ec40",
+ "recorded_at": "2026-10-23T10:32:56+00:00",
+ "columns": [
+  "trip_date",
+  "avg_dist",
+  "avg_amount",
+  "d_day_name"
+ ],
+ "rows": [
+  [
+   "2024-11-07",
+   3.249533679952007,
+   28.344273792857695,
+   "Thursday"
+  ],
+  [
+   "2024-11-14",
+   5.088759831123541,
+   28.70524837265613,
+   "Thursday"
+  ],
+  [
+   "2024-11-21",
+   4.552283854285692,
+   28.761140849758707,
+   "Thursday"
+  ],
+  [
+   "2024-11-28",
+   9.471360752938693,
+   25.322095955671823,
+   "Thursday"
+  ]
+ ],
+ "elapsed_s": 15.593,
+ "label": "LIVE Zetaris Lightning (JDBC)",
+ "rows_total": 4
+}

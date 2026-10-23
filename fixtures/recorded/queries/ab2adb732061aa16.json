@@ -1,0 +1,8 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT y.trip_date, y.avg_total_amount AS avg_total_amount, y.avg_trip_distance AS avg_trip_distance, CASE WHEN dayofweek(y.trip_date) = 2 THEN 'Monday' ELSE NULL END AS day_type, AVG(CASE WHEN dayofweek(y.trip_date) = 2 AND y.trip_date < DATE '2025-01-20' THEN y.avg_total_amount END) AS baseline_avg_amount, AVG(CASE WHEN dayofweek(y.trip_date) = 2 AND y.trip_date < DATE '2025-01-20' THEN y.avg_trip_distance END) AS baseline_avg_distance FROM whybot.yellow_daily y WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+ "sql_hash": "sha256:ab2adb732061aa16",
+ "recorded_at": "2026-10-23T10:20:20+00:00",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The non-aggregating expression \"avg_total_amount\" is based on columns which are not participating in the GROUP BY clause.\nAdd the columns or the expression to the GROUP BY, aggregate the expression, or use \"any_value(avg_total_amount)\" if you do not care which of the values within a group is returned.;\nGlobalLimit 500\n+- LocalLimit 500\n   +- Sort [trip_date#10751 ASC NULLS FIRST], true\n      +- Aggregate [trip_date#10751], [trip_date#10751, avg_total_amo",
+ "label": "LIVE Zetaris Lightning (JDBC)"
+}
