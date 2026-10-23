@@ -1,0 +1,8 @@
+{
+ "source": "zetaris",
+ "sql": "SELECT w.obs_date, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c FROM whybot.nyc_weather_daily w WHERE w.obs_date = DATE '2025-01-20' UNION ALL SELECT w2.obs_date, w2.prcp_mm, w2.snow_mm, w2.tmax_c, w2.tmin_c FROM whybot.nyc_weather_daily w2 WHERE w2.obs_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY obs_date LIMIT 500",
+ "sql_hash": "sha256:b57e25afbf9898da",
+ "recorded_at": "2026-10-23T14:41:18+00:00",
+ "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_ATTRIBUTES.RESOLVED_ATTRIBUTE_APPEAR_IN_OPERATION] Resolved attribute(s) \"DATE\" missing from \"ID\", \"DATE\", \"ELEMENT\", \"DATA_VALUE\", \"M_FLAG\", \"Q_FLAG\", \"S_FLAG\", \"OBS_TIME\" in operator !Filter (DATE#27683 >= 20240101). Attribute(s) with the same name appear in the operation: \"DATE\".\nPlease check if the right attribute(s) are used.; line 1 pos 0;\nGlobalLimit 500\n+- LocalLimit 500\n   +- Sort [obs_date#27677 ASC NULLS FIRST], true\n      +- Union false, false\n         :-",
+ "label": "LIVE Zetaris Lightning (JDBC)"
+}

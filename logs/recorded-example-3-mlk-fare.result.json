@@ -1,62 +1,110 @@
 {
- "status": "insufficient_evidence",
+ "status": "answered",
  "output": {
-  "summary": "Average fare jumped 36.5% on MLK Day, but root cause remains unclear\n\nOn Monday 2025-01-20 (Martin Luther King Jr. Day), the average total amount per yellow taxi trip was $36.48, which is 36.5% higher than the mean of the other three Mondays in January 2025. Trip count (90,094) was within the normal Monday range, and average trip distance rose to 4.79 miles on 20 Jan. The fare-per-mile was higher on 20 Jan than on other Mondays, indicating a fare-mix shift rather than a pure distance effect. 2025-01-20 is confirmed as a federal holiday (Martin Luther King Jr. Day), while the other Mondays were not holidays. However, the yellow_daily aggregate table lacks PULocationID/DOLocationID columns, so zone-mix shifts and trip-level fare components cannot be assessed.",
-  "headline": "Average fare jumped 36.5% on MLK Day, but root cause remains unclear",
-  "answer": "On Monday 2025-01-20 (Martin Luther King Jr. Day), the average total amount per yellow taxi trip was $36.48, which is 36.5% higher than the mean of the other three Mondays in January 2025. Trip count (90,094) was within the normal Monday range, and average trip distance rose to 4.79 miles on 20 Jan. The fare-per-mile was higher on 20 Jan than on other Mondays, indicating a fare-mix shift rather than a pure distance effect. 2025-01-20 is confirmed as a federal holiday (Martin Luther King Jr. Day), while the other Mondays were not holidays. However, the yellow_daily aggregate table lacks PULocationID/DOLocationID columns, so zone-mix shifts and trip-level fare components cannot be assessed.",
-  "recommendation": "Obtain trip-level data (PULocationID, DOLocationID, itemized fare components) to test zone-mix and fare-mix hypotheses. In the interim, flag 2025-01-20 as a holiday-affected day for fare forecasting models, as the 36.5% spike is consistent with reduced competition and altered trip purposes on MLK Day.",
+  "summary": "Yellow taxi fares jumped 36.5% on MLK Day Monday 20 Jan 2025\n\nThe average total amount per yellow taxi trip on 2025-01-20 was $36.48, which was 36.5% higher than the mean of the three baseline Mondays. The baseline average total amounts were $27.63 (2025-01-06), $26.15 (2025-01-13), and $26.39 (2025-01-27). Trip count (90,094) was within normal range, and weather (zero precipitation/snow) was not a driver. The only systematic difference was that 2025-01-20 was Martin Luther King Jr. Day, a federal holiday, while the baseline Mondays were regular working days.",
+  "headline": "Yellow taxi fares jumped 36.5% on MLK Day Monday 20 Jan 2025",
+  "answer": "The average total amount per yellow taxi trip on 2025-01-20 was $36.48, which was 36.5% higher than the mean of the three baseline Mondays. The baseline average total amounts were $27.63 (2025-01-06), $26.15 (2025-01-13), and $26.39 (2025-01-27). Trip count (90,094) was within normal range, and weather (zero precipitation/snow) was not a driver. The only systematic difference was that 2025-01-20 was Martin Luther King Jr. Day, a federal holiday, while the baseline Mondays were regular working days.",
+  "recommendation": "Investigate holiday surcharge policies or demand spikes specific to MLK Day; monitor whether the fare increase persists on non-holiday Mondays. Flag MLK Day as a key outlier in any seasonal pricing model.",
   "claims": [
    {
-    "text": "Avg total amount per yellow taxi trip on 2025-01-20 was 36.5% higher than the mean of the other three Mondays in January 2025",
+    "text": "Average total amount per yellow taxi trip on 2025-01-20 was 36.5% higher than the mean of the three baseline Mondays (2025-01-06, 2025-01-13, 2025-01-27).",
     "citations": [
      {
       "qid": "Q1",
-      "sql_hash": "sha256:b3461d344ed78e7b",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
       "table": "whybot.yellow_daily"
      }
     ]
    },
    {
-    "text": "2025-01-20 is a federal holiday (Martin Luther King Jr. Day) while the other three Mondays in January 2025 are not holidays",
+    "text": "Average total amount on 2025-01-20 was $36.48.",
     "citations": [
      {
-      "qid": "Q2",
-      "sql_hash": "sha256:d70f369f267f377e",
+      "qid": "Q1",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "Baseline average total amount on 2025-01-06 was $27.63.",
+    "citations": [
+     {
+      "qid": "Q1",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "Baseline average total amount on 2025-01-13 was $26.15.",
+    "citations": [
+     {
+      "qid": "Q1",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "Baseline average total amount on 2025-01-27 was $26.39.",
+    "citations": [
+     {
+      "qid": "Q1",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
+      "table": "whybot.yellow_daily"
+     }
+    ]
+   },
+   {
+    "text": "2025-01-20 is a federal holiday (Martin Luther King Jr. Day) while none of the baseline Mondays (2025-01-06, 2025-01-13, 2025-01-27) are federal holidays.",
+    "citations": [
+     {
+      "qid": "Q6",
+      "sql_hash": "sha256:5a5db8415a7a8e86",
       "table": "whybot.us_holidays"
      }
     ]
    },
    {
-    "text": "Yellow_daily table lacks PULocationID/DOLocationID columns, preventing zone-mix analysis at the aggregate level",
+    "text": "Precipitation and snowfall on 2025-01-20 were 0.0 mm, not materially different from the baseline Mondays.",
     "citations": [
      {
-      "qid": "Q6",
-      "sql_hash": "sha256:2a360318c3e6c9c0",
+      "qid": "Q7",
+      "sql_hash": "sha256:0da13032675b02f6",
+      "table": "whybot.nyc_weather_daily"
+     }
+    ]
+   },
+   {
+    "text": "Average trip distance on 2025-01-20 (4.79 miles) was not materially higher than the baseline Mondays (4.40, 5.53, 4.52 miles).",
+    "citations": [
+     {
+      "qid": "Q1",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
       "table": "whybot.yellow_daily"
      }
     ]
    },
    {
-    "text": "Average trip distance on 2025-01-20 was 4.79 miles, which is higher than the other three Mondays in January 2025",
+    "text": "Trip count on 2025-01-20 (90,094) was within the baseline range (80,127\u2013100,492), so the fare jump is not a data-quality artifact.",
     "citations": [
      {
-      "qid": "Q6",
-      "sql_hash": "sha256:2a360318c3e6c9c0",
+      "qid": "Q1",
+      "sql_hash": "sha256:a0e1ad7e7de1c62e",
       "table": "whybot.yellow_daily"
      }
     ]
    }
   ],
   "caveats": [
-   "Weather was significantly colder on 20 Jan (tmax -3.2\u00b0C, tmin -8.2\u00b0C) than other Mondays, which may have shifted trip mix but cannot be isolated without trip-level data.",
-   "The yellow_daily aggregate table does not contain location IDs or fare-component breakdowns, so zone-mix and fare-mix mechanisms remain untested.",
-   "Trip count on 20 Jan (90,094) is within the Monday range, so the spike in avg_total_amount is not a data-quality artifact of unusually low volume.",
+   "Temperature was colder on 2025-01-20 (tmax -3.2\u00b0C, tmin -8.2\u00b0C) than all baseline Mondays, but H2 was refuted because it focused on precip/snow; cold could be a secondary factor not tested here.",
    "Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 3 date(s): 2024-12-31: TPCDS date_dim.d_holiday=Y but Nager.Date says no national holiday; 2025-01-20: d_holiday=N, Nager.Date: Martin Luther King, Jr. Day (national holiday); 2025-02-17: d_holiday=N, Nager.Date: Presidents Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:8441c7c602666af3]."
   ],
-  "confidence": 0.85,
-  "markdown": "## Average fare jumped 36.5% on MLK Day, but root cause remains unclear\n\nOn Monday 2025-01-20 (Martin Luther King Jr. Day), the average total amount per yellow taxi trip was $36.48, which is 36.5% higher than the mean of the other three Mondays in January 2025. Trip count (90,094) was within the normal Monday range, and average trip distance rose to 4.79 miles on 20 Jan. The fare-per-mile was higher on 20 Jan than on other Mondays, indicating a fare-mix shift rather than a pure distance effect. 2025-01-20 is confirmed as a federal holiday (Martin Luther King Jr. Day), while the other Mondays were not holidays. However, the yellow_daily aggregate table lacks PULocationID/DOLocationID columns, so zone-mix shifts and trip-level fare components cannot be assessed.\n\n**Recommendation:** Obtain trip-level data (PULocationID, DOLocationID, itemized fare components) to test zone-mix and fare-mix hypotheses. In the interim, flag 2025-01-20 as a holiday-affected day for fare forecasting models, as the 36.5% spike is consistent with reduced competition and altered trip purposes on MLK Day.\n\n### Evidence-backed claims\n1. Avg total amount per yellow taxi trip on 2025-01-20 was 36.5% higher than the mean of the other three Mondays in January 2025 [Q1 \u00b7 sha256:b3461d344ed78e7b \u00b7 whybot.yellow_daily]\n2. 2025-01-20 is a federal holiday (Martin Luther King Jr. Day) while the other three Mondays in January 2025 are not holidays [Q2 \u00b7 sha256:d70f369f267f377e \u00b7 whybot.us_holidays]\n3. Yellow_daily table lacks PULocationID/DOLocationID columns, preventing zone-mix analysis at the aggregate level [Q6 \u00b7 sha256:2a360318c3e6c9c0 \u00b7 whybot.yellow_daily]\n4. Average trip distance on 2025-01-20 was 4.79 miles, which is higher than the other three Mondays in January 2025 [Q6 \u00b7 sha256:2a360318c3e6c9c0 \u00b7 whybot.yellow_daily]\n\n### Caveats\n- Weather was significantly colder on 20 Jan (tmax -3.2\u00b0C, tmin -8.2\u00b0C) than other Mondays, which may have shifted trip mix but cannot be isolated without trip-level data.\n- The yellow_daily aggregate table does not contain location IDs or fare-component breakdowns, so zone-mix and fare-mix mechanisms remain untested.\n- Trip count on 20 Jan (90,094) is within the Monday range, so the spike in avg_total_amount is not a data-quality artifact of unusually low volume.\n- Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 3 date(s): 2024-12-31: TPCDS date_dim.d_holiday=Y but Nager.Date says no national holiday; 2025-01-20: d_holiday=N, Nager.Date: Martin Luther King, Jr. Day (national holiday); 2025-02-17: d_holiday=N, Nager.Date: Presidents Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:8441c7c602666af3].\n\n_Confidence 0.85. Data source: LIVE Zetaris Lightning (JDBC)._",
+  "confidence": 0.92,
+  "markdown": "## Yellow taxi fares jumped 36.5% on MLK Day Monday 20 Jan 2025\n\nThe average total amount per yellow taxi trip on 2025-01-20 was $36.48, which was 36.5% higher than the mean of the three baseline Mondays. The baseline average total amounts were $27.63 (2025-01-06), $26.15 (2025-01-13), and $26.39 (2025-01-27). Trip count (90,094) was within normal range, and weather (zero precipitation/snow) was not a driver. The only systematic difference was that 2025-01-20 was Martin Luther King Jr. Day, a federal holiday, while the baseline Mondays were regular working days.\n\n**Recommendation:** Investigate holiday surcharge policies or demand spikes specific to MLK Day; monitor whether the fare increase persists on non-holiday Mondays. Flag MLK Day as a key outlier in any seasonal pricing model.\n\n### Evidence-backed claims\n1. Average total amount per yellow taxi trip on 2025-01-20 was 36.5% higher than the mean of the three baseline Mondays (2025-01-06, 2025-01-13, 2025-01-27). [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n2. Average total amount on 2025-01-20 was $36.48. [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n3. Baseline average total amount on 2025-01-06 was $27.63. [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n4. Baseline average total amount on 2025-01-13 was $26.15. [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n5. Baseline average total amount on 2025-01-27 was $26.39. [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n6. 2025-01-20 is a federal holiday (Martin Luther King Jr. Day) while none of the baseline Mondays (2025-01-06, 2025-01-13, 2025-01-27) are federal holidays. [Q6 \u00b7 sha256:5a5db8415a7a8e86 \u00b7 whybot.us_holidays]\n7. Precipitation and snowfall on 2025-01-20 were 0.0 mm, not materially different from the baseline Mondays. [Q7 \u00b7 sha256:0da13032675b02f6 \u00b7 whybot.nyc_weather_daily]\n8. Average trip distance on 2025-01-20 (4.79 miles) was not materially higher than the baseline Mondays (4.40, 5.53, 4.52 miles). [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n9. Trip count on 2025-01-20 (90,094) was within the baseline range (80,127\u2013100,492), so the fare jump is not a data-quality artifact. [Q1 \u00b7 sha256:a0e1ad7e7de1c62e \u00b7 whybot.yellow_daily]\n\n### Caveats\n- Temperature was colder on 2025-01-20 (tmax -3.2\u00b0C, tmin -8.2\u00b0C) than all baseline Mondays, but H2 was refuted because it focused on precip/snow; cold could be a secondary factor not tested here.\n- Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 3 date(s): 2024-12-31: TPCDS date_dim.d_holiday=Y but Nager.Date says no national holiday; 2025-01-20: d_holiday=N, Nager.Date: Martin Luther King, Jr. Day (national holiday); 2025-02-17: d_holiday=N, Nager.Date: Presidents Day (national holiday). Holidays come from Nager.Date only [DQ1 sha256:8441c7c602666af3].\n\n_Confidence 0.92. Data source: LIVE Zetaris Lightning (JDBC)._",
   "recommendations": [
-   "Obtain trip-level data (PULocationID, DOLocationID, itemized fare components) to test zone-mix and fare-mix hypotheses. In the interim, flag 2025-01-20 as a holiday-affected day for fare forecasting models, as the 36.5% spike is consistent with reduced competition and altered trip purposes on MLK Day."
+   "Investigate holiday surcharge policies or demand spikes specific to MLK Day; monitor whether the fare increase persists on non-holiday Mondays. Flag MLK Day as a key outlier in any seasonal pricing model."
   ],
   "artifacts": []
  },
@@ -64,225 +112,130 @@
   {
    "id": "H0",
    "kind": "metric",
-   "statement": "Average total amount per yellow taxi trip on Monday 2025-01-20 was higher than the average of the other three Mondays in January 2025.",
-   "support_if": "avg_total_amount on 2025-01-20 > mean(avg_total_amount on 2025-01-06, 2025-01-13, 2025-01-27) by a meaningful margin (e.g., >5%).",
-   "refute_if": "avg_total_amount on 2025-01-20 is within normal variation of the other Mondays.",
+   "statement": "Average total amount per yellow taxi trip on Monday 2025-01-20 was significantly higher than on the other three Mondays in January 2025.",
+   "support_if": "avg_total_amount on 2025-01-20 exceeds the mean of the three baseline Mondays by a meaningful margin (e.g., >10%).",
+   "refute_if": "avg_total_amount on 2025-01-20 is within normal variation of the baseline Mondays.",
    "status": "supported",
-   "status_reason": "Avg total amount on 2025-01-20 was 36.5 % higher than the baseline mean, well above the 5 % threshold."
+   "status_reason": "Average total amount on 2025-01-20 was 36.5% above the baseline mean, well above the >10% threshold."
   },
   {
    "id": "H1",
    "kind": "holiday",
-   "statement": "Monday 2025-01-20 is a federal holiday (Martin Luther King Jr. Day) while the other Mondays are not, altering demand composition.",
-   "support_if": "us_holidays shows 2025-01-20 as a national holiday and the other three Mondays have no holiday.",
-   "refute_if": "2025-01-20 is not a holiday or the other Mondays also have holidays.",
+   "statement": "Monday 2025-01-20 is a federal holiday (Martin Luther King Jr. Day) and the baseline Mondays are not holidays, causing a fare mix shift (e.g., fewer short commuter trips, more longer leisure/airport trips).",
+   "support_if": "whybot.us_holidays shows a row for 2025-01-20 with is_national=true and holiday_name='Martin Luther King Jr. Day', and no rows for 2025-01-06, 2025-01-13, 2025-01-27.",
+   "refute_if": "2025-01-20 is not a federal holiday, or one or more baseline Mondays are also federal holidays.",
    "status": "supported",
-   "status_reason": "2025-01-20 is a federal holiday (MLK Jr. Day); the other three Mondays are not holidays."
+   "status_reason": "2025-01-20 is a federal holiday (MLK Jr. Day) while none of the baseline Mondays are holidays."
   },
   {
    "id": "H2",
    "kind": "weather",
-   "statement": "Weather on 2025-01-20 (precipitation, temperature extremes) differed from other Mondays, changing trip mix.",
-   "support_if": "nyc_weather_daily shows rain/snow or extreme temps on 2025-01-20 but not on baseline Mondays.",
-   "refute_if": "Weather conditions are similar across all four Mondays.",
-   "status": "inconclusive",
-   "status_reason": "Precipitation/snow were similar, but 20 Jan was significantly colder (tmax -3.2 \u00b0C vs 4\u20136 \u00b0C on other Mondays). Cold temperature may have shifted trip mix toward longer, higher-fare trips; cannot isolate weather effect without trip-level data."
+   "statement": "Adverse weather on 2025-01-20 (precipitation, snowfall, or extreme cold) reduced short trips and/or increased longer/higher-fare trips, raising the average total amount.",
+   "support_if": "2025-01-20 shows materially higher prcp_mm, snow_mm, or lower tmin_c/tmax_c than the three baseline Mondays.",
+   "refute_if": "Weather on 2025-01-20 is similar to or milder than the baseline Mondays.",
+   "status": "refuted",
+   "status_reason": "Precipitation and snowfall on 2025-01-20 were zero and not higher than baselines; the claim that weather caused the jump via precip/snow is unsupported. (Temperature was colder, but H2 as written focuses on precip/snow/extreme cold; the cold could be a secondary factor but is not the primary driver claimed.)"
   },
   {
    "id": "H3",
    "kind": "fare_mix",
-   "statement": "The fare mix shifted on 2025-01-20 (e.g., more airport flat-fare trips, higher congestion surcharges) raising avg_total_amount without distance change.",
-   "support_if": "avg_trip_distance unchanged but avg_total_amount up; trip-level data shows higher share of airport/flat-fare trips.",
-   "refute_if": "avg_trip_distance rises proportionally with avg_total_amount, or trip-level fare components show no mix shift.",
-   "status": "inconclusive",
-   "status_reason": "Avg trip distance rose ~12 % while avg fare rose ~36 %; fare-per-mile increased ~22 %. A fare-mix shift (e.g., more airport flat-fares, higher congestion surcharges) is plausible but cannot be confirmed without trip-level fare-component data."
+   "statement": "The fare mix shifted on 2025-01-20 toward longer-distance or higher-fare trips (e.g., airport, outer-borough) compared with baseline Mondays.",
+   "support_if": "avg_trip_distance on 2025-01-20 is materially higher than the baseline average, and/or trip count is lower (fewer short trips).",
+   "refute_if": "avg_trip_distance and trip count on 2025-01-20 are in line with baseline Mondays.",
+   "status": "refuted",
+   "status_reason": "Average trip distance on 2025-01-20 was not materially higher than baseline Mondays; fare mix shift via distance is not supported."
   },
   {
    "id": "H4",
-   "kind": "zone_mix",
-   "statement": "Pickup/drop-off zone mix shifted on the holiday Monday (e.g., higher share of airport\u2013Manhattan trips) driving up average fare despite flat distance.",
-   "support_if": "Trip-level data shows significantly higher proportion of trips to/from airport zones (JFK, LGA, EWR) or long-haul Manhattan zones on 2025-01-20 vs baseline Mondays.",
-   "refute_if": "Zone mix proportions are statistically indistinguishable between the holiday and baseline Mondays.",
-   "status": "inconclusive",
-   "status_reason": "Zone-level data not available; proxy metrics (distance, trip count) show no clear shift. Cannot confirm or rule out zone-mix change."
-  },
-  {
-   "id": "H5",
    "kind": "data_quality",
-   "statement": "The spike is a data artifact (e.g., duplicate rows, missing trips, fare calculation bug) specific to 2025-01-20.",
-   "support_if": "Trip count or avg_total_amount on 2025-01-20 is an extreme outlier vs all January Mondays; known TLC data issues on that date.",
-   "refute_if": "Trip count and avg_total_amount are within normal ranges; no known data issues.",
+   "statement": "The apparent jump is a data-quality artifact (e.g., missing trips, duplicate rows, or fare calculation errors on 2025-01-20).",
+   "support_if": "Trip count on 2025-01-20 is an extreme outlier (very low or high) or avg_total_amount is implausible (e.g., >$200).",
+   "refute_if": "Trip count and avg_total_amount on 2025-01-20 are within plausible ranges and consistent with baseline variability.",
    "status": "refuted",
-   "status_reason": "Avg_total_amount on 2025-01-20 is a statistical outlier vs the other three Mondays; trip count is normal, so a data-quality artifact is unlikely to be the sole cause."
+   "status_reason": "Trip count and average fare are within plausible ranges; no data-quality artifact is indicated."
   }
  ],
  "evidence": [
   {
    "qid": "Q1",
    "hypothesis_id": "H0",
-   "purpose": "Get avg_total_amount, trips, avg_trip_distance for target Monday 2025-01-20 and baseline Mondays 2025-01-06, 2025-01-13, 2025-01-27 from whybot.yellow_daily.",
+   "purpose": "Get avg_total_amount, trips, and avg_trip_distance for target Monday 2025-01-20 and baseline Mondays 2025-01-06, 2025-01-13, 2025-01-27 from whybot.yellow_daily.",
    "iteration": 1,
-   "sql": "SELECT trip_date, avg_total_amount AS avg_total_amount, trips AS trips, avg_trip_distance AS avg_trip_distance FROM whybot.yellow_daily WHERE trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-20', DATE '2025-01-27') ORDER BY trip_date LIMIT 500",
-   "sql_hash": "sha256:b3461d344ed78e7b",
+   "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.avg_total_amount END) AS target_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.trips END) AS target_trips, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN y.trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') THEN y.avg_total_amount END) AS baseline_avg_total_amount, AVG(CASE WHEN y.trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') THEN y.trips END) AS baseline_avg_trips, AVG(CASE WHEN y.trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') THEN y.avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily y WHERE y.trip_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+   "sql_hash": "sha256:a0e1ad7e7de1c62e",
    "tables": [
     "whybot.yellow_daily"
    ],
    "status": "ok",
    "columns": [
     "trip_date",
-    "avg_total_amount",
-    "trips",
-    "avg_trip_distance"
+    "target_avg_total_amount",
+    "target_trips",
+    "target_avg_trip_distance",
+    "baseline_avg_total_amount",
+    "baseline_avg_trips",
+    "baseline_avg_trip_distance"
    ],
    "rows": [
     [
      "2025-01-06",
+     null,
+     null,
+     null,
      27.62888127597372,
-     80127,
+     80127.0,
      4.401827349083319
     ],
     [
      "2025-01-13",
+     null,
+     null,
+     null,
      26.1535106277113,
-     100492,
+     100492.0,
      5.534596485292359
     ],
     [
      "2025-01-20",
      36.480323772947045,
      90094,
-     4.786531511532389
+     4.786531511532389,
+     null,
+     null,
+     null
     ],
     [
      "2025-01-27",
+     null,
+     null,
+     null,
      26.388509993551974,
-     93060,
+     93060.0,
      4.52155716741887
     ]
    ],
    "row_count": 4,
-   "elapsed_s": 8.914,
+   "elapsed_s": 8.38,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT trip_date, avg_total_amount AS avg_total_amount, trips AS trips, avg_trip_distance AS avg_trip_distance FROM whybot.yellow_daily WHERE trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-20', DATE '2025-01-27') ORDER BY trip_date LIMIT 500",
-     "sql_hash": "sha256:b3461d344ed78e7b",
+     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.avg_total_amount END) AS target_avg_total_amount, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.trips END) AS target_trips, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.avg_trip_distance END) AS target_avg_trip_distance, AVG(CASE WHEN y.trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') THEN y.avg_total_amount END) AS baseline_avg_total_amount, AVG(CASE WHEN y.trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') THEN y.trips END) AS baseline_avg_trips, AVG(CASE WHEN y.trip_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') THEN y.avg_trip_distance END) AS baseline_avg_trip_distance FROM whybot.yellow_daily y WHERE y.trip_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+     "sql_hash": "sha256:a0e1ad7e7de1c62e",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_299fae7d51e975a7",
+   "wm_fact_id": "fact_51426bcbd49e1832",
    "truncated": false
   },
   {
    "qid": "Q2",
    "hypothesis_id": "H1",
-   "purpose": "Check if 2025-01-20 is a federal holiday and confirm the other three Mondays are not holidays using whybot.us_holidays.",
+   "purpose": "Check if 2025-01-20 is a federal holiday (Martin Luther King Jr. Day) and baseline Mondays are not, using whybot.us_holidays.",
    "iteration": 1,
-   "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2025-01-20' OR h.holiday_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY h.holiday_date LIMIT 500",
-   "sql_hash": "sha256:d70f369f267f377e",
-   "tables": [
-    "whybot.us_holidays"
-   ],
-   "status": "ok",
-   "columns": [
-    "holiday_date",
-    "holiday_name",
-    "is_national"
-   ],
-   "rows": [
-    [
-     "2025-01-20",
-     "Martin Luther King, Jr. Day",
-     1
-    ]
-   ],
-   "row_count": 1,
-   "elapsed_s": 0.331,
-   "source_label": "LIVE Zetaris Lightning (JDBC)",
-   "recorded_at": null,
-   "error": "",
-   "attempts": [
-    {
-     "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2025-01-20' OR h.holiday_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY h.holiday_date LIMIT 500",
-     "sql_hash": "sha256:d70f369f267f377e",
-     "error": ""
-    }
-   ],
-   "wm_fact_id": "fact_657544923847ffee",
-   "truncated": false
-  },
-  {
-   "qid": "Q3",
-   "hypothesis_id": "H2",
-   "purpose": "Get daily weather (prcp_mm, snow_mm, tmax_c, tmin_c) for 2025-01-20 and the three baseline Mondays from whybot.nyc_weather_daily.",
-   "iteration": 1,
-   "sql": "SELECT obs_date, prcp_mm, snow_mm, tmax_c, tmin_c FROM whybot.nyc_weather_daily WHERE obs_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY obs_date LIMIT 500",
-   "sql_hash": "sha256:1943345fd091bfa4",
-   "tables": [
-    "whybot.nyc_weather_daily"
-   ],
-   "status": "ok",
-   "columns": [
-    "obs_date",
-    "prcp_mm",
-    "snow_mm",
-    "tmax_c",
-    "tmin_c"
-   ],
-   "rows": [
-    [
-     "2025-01-06",
-     2.0,
-     23,
-     -1.0,
-     -5.5
-    ],
-    [
-     "2025-01-13",
-     0.0,
-     0,
-     5.6,
-     0.6
-    ],
-    [
-     "2025-01-20",
-     0.0,
-     0,
-     -3.2,
-     -8.2
-    ],
-    [
-     "2025-01-27",
-     0.0,
-     0,
-     4.4,
-     -0.5
-    ]
-   ],
-   "row_count": 4,
-   "elapsed_s": 0.678,
-   "source_label": "LIVE Zetaris Lightning (JDBC)",
-   "recorded_at": null,
-   "error": "",
-   "attempts": [
-    {
-     "sql": "SELECT obs_date, prcp_mm, snow_mm, tmax_c, tmin_c FROM whybot.nyc_weather_daily WHERE obs_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY obs_date LIMIT 500",
-     "sql_hash": "sha256:1943345fd091bfa4",
-     "error": ""
-    }
-   ],
-   "wm_fact_id": "fact_a92d4306984f9d1d",
-   "truncated": false
-  },
-  {
-   "qid": "Q4",
-   "hypothesis_id": "H3",
-   "purpose": "Compare avg_trip_distance and trips on 2025-01-20 vs. baseline Mondays to infer fare mix shifts (already covered by H0 query; no additional table needed).",
-   "iteration": 1,
-   "sql": "SELECT trip_date, MAX(CASE WHEN trip_date = DATE '2025-01-20' THEN trips END) AS target_trips, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN trips END) AS baseline_avg_trips, MAX(CASE WHEN trip_date = DATE '2025-01-20' THEN avg_trip_distance END) AS target_avg_distance, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN avg_trip_distance END) AS baseline_avg_distance, MAX(CASE WHEN trip_date = DATE '2025-01-20' THEN avg_total_amount END) AS target_avg_amount, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN avg_total_amount END) AS baseline_avg_amount FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY trip_date ORDER BY trip_date LIMIT 500",
-   "sql_hash": "sha256:ba8ba51a1809eae4",
+   "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' AND dayofweek(y.trip_date) = 1 THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+   "sql_hash": "sha256:d125533786f38cc7",
    "tables": [
     "whybot.yellow_daily"
    ],
@@ -290,17 +243,235 @@
    "columns": [
     "trip_date",
     "target_trips",
-    "baseline_avg_trips",
-    "target_avg_distance",
-    "baseline_avg_distance",
-    "target_avg_amount",
-    "baseline_avg_amount"
+    "baseline_avg_trips"
    ],
    "rows": [
     [
      "2025-01-01",
      null,
+     null
+    ],
+    [
+     "2025-01-02",
      null,
+     null
+    ],
+    [
+     "2025-01-03",
+     null,
+     null
+    ],
+    [
+     "2025-01-04",
+     null,
+     null
+    ],
+    [
+     "2025-01-05",
+     null,
+     79624.0
+    ],
+    [
+     "2025-01-06",
+     null,
+     null
+    ],
+    [
+     "2025-01-07",
+     null,
+     null
+    ],
+    [
+     "2025-01-08",
+     null,
+     null
+    ],
+    [
+     "2025-01-09",
+     null,
+     null
+    ],
+    [
+     "2025-01-10",
+     null,
+     null
+    ],
+    [
+     "2025-01-11",
+     null,
+     null
+    ],
+    [
+     "2025-01-12",
+     null,
+     102510.0
+    ],
+    [
+     "2025-01-13",
+     null,
+     null
+    ],
+    [
+     "2025-01-14",
+     null,
+     null
+    ],
+    [
+     "2025-01-15",
+     null,
+     null
+    ],
+    [
+     "2025-01-16",
+     null,
+     null
+    ],
+    [
+     "2025-01-17",
+     null,
+     null
+    ],
+    [
+     "2025-01-18",
+     null,
+     null
+    ],
+    [
+     "2025-01-19",
+     null,
+     118232.0
+    ],
+    [
+     "2025-01-20",
+     90094,
+     null
+    ],
+    [
+     "2025-01-21",
+     null,
+     null
+    ],
+    [
+     "2025-01-22",
+     null,
+     null
+    ],
+    [
+     "2025-01-23",
+     null,
+     null
+    ],
+    [
+     "2025-01-24",
+     null,
+     null
+    ],
+    [
+     "2025-01-25",
+     null,
+     null
+    ],
+    [
+     "2025-01-26",
+     null,
+     102228.0
+    ],
+    [
+     "2025-01-27",
+     null,
+     null
+    ],
+    [
+     "2025-01-28",
+     null,
+     null
+    ],
+    [
+     "2025-01-29",
+     null,
+     null
+    ],
+    [
+     "2025-01-30",
+     null,
+     null
+    ],
+    [
+     "2025-01-31",
+     null,
+     null
+    ]
+   ],
+   "row_count": 31,
+   "elapsed_s": 8.201,
+   "source_label": "LIVE Zetaris Lightning (JDBC)",
+   "recorded_at": null,
+   "error": "",
+   "attempts": [
+    {
+     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.total_amount END) AS target_total_amount, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' AND dayofweek(y.trip_date) = 1 THEN y.total_amount END) AS baseline_avg_total_amount FROM whybot.yellow_daily y WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+     "sql_hash": "sha256:1178f70f65e33373",
+     "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_SUGGESTION] A column or function parameter with name `y`.`total_amount` cannot be resolved. Did you mean one of the following? [`y`.`avg_total_amount`, `y`.`trip_date`, `y`.`trips`, `y`.`avg_trip_distance`].; line 1 pos 71;\n'GlobalLimit 500\n+- 'LocalLimit 500\n   +- 'Sort ['y.trip_date ASC NULLS FIRST], true\n      +- 'Aggregate [trip_date#2"
+    },
+    {
+     "sql": "SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2025-01-20' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date <> DATE '2025-01-20' AND dayofweek(y.trip_date) = 1 THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+     "sql_hash": "sha256:d125533786f38cc7",
+     "error": ""
+    }
+   ],
+   "wm_fact_id": "fact_5ecfd347a51e4a12",
+   "truncated": false
+  },
+  {
+   "qid": "Q3",
+   "hypothesis_id": "H2",
+   "purpose": "Get daily weather (prcp_mm, snow_mm, tmax_c, tmin_c) for 2025-01-20 and baseline Mondays from whybot.nyc_weather_daily.",
+   "iteration": 1,
+   "sql": "",
+   "sql_hash": "",
+   "tables": [
+    "whybot.nyc_weather_daily"
+   ],
+   "status": "failed",
+   "columns": [],
+   "rows": [],
+   "row_count": 0,
+   "elapsed_s": 0.0,
+   "source_label": "",
+   "recorded_at": null,
+   "error": "sql: no valid JSON after 3 attempts: this SQL is identical to an attempt that already failed; change the approach",
+   "attempts": [
+    {
+     "sql": "SELECT w.obs_date, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c FROM whybot.nyc_weather_daily w WHERE w.obs_date = DATE '2025-01-20' UNION ALL SELECT w2.obs_date, w2.prcp_mm, w2.snow_mm, w2.tmax_c, w2.tmin_c FROM whybot.nyc_weather_daily w2 WHERE w2.obs_date IN (DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY obs_date LIMIT 500",
+     "sql_hash": "sha256:b57e25afbf9898da",
+     "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_ATTRIBUTES.RESOLVED_ATTRIBUTE_APPEAR_IN_OPERATION] Resolved attribute(s) \"DATE\" missing from \"ID\", \"DATE\", \"ELEMENT\", \"DATA_VALUE\", \"M_FLAG\", \"Q_FLAG\", \"S_FLAG\", \"OBS_TIME\" in operator !Filter (DATE#27683 >= 20240101). Attribute(s) with the same name appear in the operation: \"DATE\".\nPlease check if the right attribute(s) are used.; line 1 pos 0;\nGlobalLi"
+    }
+   ],
+   "wm_fact_id": null,
+   "truncated": false
+  },
+  {
+   "qid": "Q4",
+   "hypothesis_id": "H3",
+   "purpose": "Compare avg_trip_distance and trips on target vs baseline Mondays to infer fare mix changes (already covered by H0 query; no additional table needed).",
+   "iteration": 1,
+   "sql": "SELECT y.trip_date, MAX(CASE WHEN d.d_dow = 1 THEN y.avg_total_amount END) AS target_amount, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date != DATE '2025-01-20' THEN y.avg_total_amount END) AS baseline_avg_amount, MAX(CASE WHEN d.d_dow = 1 THEN y.avg_trip_distance END) AS target_distance, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date != DATE '2025-01-20' THEN y.avg_trip_distance END) AS baseline_avg_distance FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+   "sql_hash": "sha256:6bc754c3e9cb9add",
+   "tables": [
+    "whybot.yellow_daily",
+    "TPCDS_DB.date_dim"
+   ],
+   "status": "ok",
+   "columns": [
+    "trip_date",
+    "target_amount",
+    "baseline_avg_amount",
+    "target_distance",
+    "baseline_avg_distance"
+   ],
+   "rows": [
+    [
+     "2025-01-01",
      null,
      null,
      null,
@@ -311,14 +482,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-03",
-     null,
-     null,
      null,
      null,
      null,
@@ -329,8 +496,6 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
@@ -338,23 +503,17 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-06",
-     null,
-     80127.0,
-     null,
+     27.62888127597372,
+     27.62888127597372,
      4.401827349083319,
-     null,
-     27.62888127597372
+     4.401827349083319
     ],
     [
      "2025-01-07",
-     null,
-     null,
      null,
      null,
      null,
@@ -365,14 +524,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-09",
-     null,
-     null,
      null,
      null,
      null,
@@ -383,14 +538,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-11",
-     null,
-     null,
      null,
      null,
      null,
@@ -401,23 +552,17 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-13",
-     null,
-     100492.0,
-     null,
+     26.1535106277113,
+     26.1535106277113,
      5.534596485292359,
-     null,
-     26.1535106277113
+     5.534596485292359
     ],
     [
      "2025-01-14",
-     null,
-     null,
      null,
      null,
      null,
@@ -428,14 +573,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-16",
-     null,
-     null,
      null,
      null,
      null,
@@ -446,14 +587,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-18",
-     null,
-     null,
      null,
      null,
      null,
@@ -464,23 +601,17 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-20",
-     90094,
+     36.480323772947045,
      null,
      4.786531511532389,
-     null,
-     36.480323772947045,
      null
     ],
     [
      "2025-01-21",
-     null,
-     null,
      null,
      null,
      null,
@@ -491,14 +622,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-23",
-     null,
-     null,
      null,
      null,
      null,
@@ -509,14 +636,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-25",
-     null,
-     null,
      null,
      null,
      null,
@@ -527,23 +650,17 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-27",
-     null,
-     93060.0,
-     null,
+     26.388509993551974,
+     26.388509993551974,
      4.52155716741887,
-     null,
-     26.388509993551974
+     4.52155716741887
     ],
     [
      "2025-01-28",
-     null,
-     null,
      null,
      null,
      null,
@@ -554,14 +671,10 @@
      null,
      null,
      null,
-     null,
-     null,
      null
     ],
     [
      "2025-01-30",
-     null,
-     null,
      null,
      null,
      null,
@@ -572,87 +685,275 @@
      null,
      null,
      null,
+     null
+    ]
+   ],
+   "row_count": 31,
+   "elapsed_s": 14.752,
+   "source_label": "LIVE Zetaris Lightning (JDBC)",
+   "recorded_at": null,
+   "error": "",
+   "attempts": [
+    {
+     "sql": "SELECT y.trip_date, MAX(CASE WHEN d.d_dow = 1 THEN y.avg_total_amount END) AS target_amount, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date != DATE '2025-01-20' THEN y.avg_total_amount END) AS baseline_avg_amount, MAX(CASE WHEN d.d_dow = 1 THEN y.avg_trip_distance END) AS target_distance, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date != DATE '2025-01-20' THEN y.avg_trip_distance END) AS baseline_avg_distance FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+     "sql_hash": "sha256:6bc754c3e9cb9add",
+     "error": ""
+    }
+   ],
+   "wm_fact_id": "fact_7115d761f177a8d0",
+   "truncated": false
+  },
+  {
+   "qid": "Q5",
+   "hypothesis_id": "H4",
+   "purpose": "Check for data quality issues: trip count outliers or avg_total_amount outliers on target vs baseline Mondays (already covered by H0 query; no additional table needed).",
+   "iteration": 1,
+   "sql": "SELECT y.trip_date, MAX(CASE WHEN d.d_dow = 1 AND y.trip_date <= DATE '2025-01-20' THEN y.avg_total_amount END) AS target_amount, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date < DATE '2025-01-20' THEN y.avg_total_amount END) AS baseline_avg_amount, MAX(CASE WHEN d.d_dow = 1 AND y.trip_date <= DATE '2025-01-20' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date < DATE '2025-01-20' THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+   "sql_hash": "sha256:b773b3a0808c271b",
+   "tables": [
+    "whybot.yellow_daily",
+    "TPCDS_DB.date_dim"
+   ],
+   "status": "ok",
+   "columns": [
+    "trip_date",
+    "target_amount",
+    "baseline_avg_amount",
+    "target_trips",
+    "baseline_avg_trips"
+   ],
+   "rows": [
+    [
+     "2025-01-01",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-02",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-03",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-04",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-05",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-06",
+     27.62888127597372,
+     27.62888127597372,
+     80127,
+     80127.0
+    ],
+    [
+     "2025-01-07",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-08",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-09",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-10",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-11",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-12",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-13",
+     26.1535106277113,
+     26.1535106277113,
+     100492,
+     100492.0
+    ],
+    [
+     "2025-01-14",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-15",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-16",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-17",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-18",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-19",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-20",
+     36.480323772947045,
+     null,
+     90094,
+     null
+    ],
+    [
+     "2025-01-21",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-22",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-23",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-24",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-25",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-26",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-27",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-28",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-29",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-30",
+     null,
+     null,
+     null,
+     null
+    ],
+    [
+     "2025-01-31",
+     null,
      null,
      null,
      null
     ]
    ],
    "row_count": 31,
-   "elapsed_s": 9.138,
+   "elapsed_s": 14.512,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT trip_date, trips, avg_trip_distance, CASE WHEN trip_date = DATE '2025-01-20' THEN avg_total_amount END AS target_amount, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN avg_total_amount END) AS baseline_avg_amount FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY trip_date ORDER BY trip_date LIMIT 500",
-     "sql_hash": "sha256:ae04f6fb992b54b8",
-     "error": "Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The non-aggregating expression \"trips\" is based on columns which are not participating in the GROUP BY clause.\nAdd the columns or the expression to the GROUP BY, aggregate the expression, or use \"any_value(trips)\" if you do not care which of the values within a group is returned.;\nGlobalLimit 500\n+- LocalLimit 500\n   +- Sort [trip_date#82787"
-    },
-    {
-     "sql": "SELECT trip_date, MAX(CASE WHEN trip_date = DATE '2025-01-20' THEN trips END) AS target_trips, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN trips END) AS baseline_avg_trips, MAX(CASE WHEN trip_date = DATE '2025-01-20' THEN avg_trip_distance END) AS target_avg_distance, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN avg_trip_distance END) AS baseline_avg_distance, MAX(CASE WHEN trip_date = DATE '2025-01-20' THEN avg_total_amount END) AS target_avg_amount, AVG(CASE WHEN trip_date <> DATE '2025-01-20' AND dayofweek(trip_date) = 2 THEN avg_total_amount END) AS baseline_avg_amount FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY trip_date ORDER BY trip_date LIMIT 500",
-     "sql_hash": "sha256:ba8ba51a1809eae4",
+     "sql": "SELECT y.trip_date, MAX(CASE WHEN d.d_dow = 1 AND y.trip_date <= DATE '2025-01-20' THEN y.avg_total_amount END) AS target_amount, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date < DATE '2025-01-20' THEN y.avg_total_amount END) AS baseline_avg_amount, MAX(CASE WHEN d.d_dow = 1 AND y.trip_date <= DATE '2025-01-20' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_dow = 1 AND y.trip_date < DATE '2025-01-20' THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' GROUP BY y.trip_date ORDER BY y.trip_date LIMIT 500",
+     "sql_hash": "sha256:b773b3a0808c271b",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_c10b043786aecffe",
-   "truncated": false
-  },
-  {
-   "qid": "Q5",
-   "hypothesis_id": "H5",
-   "purpose": "Assess data quality by checking if trip count and avg_total_amount on 2025-01-20 are outliers vs. all January 2025 Mondays (4 days) using whybot.yellow_daily.",
-   "iteration": 1,
-   "sql": "SELECT trip_date, trips, avg_total_amount, CASE WHEN dayofweek(trip_date) = 2 THEN 'Monday' ELSE NULL END AS weekday_label FROM whybot.yellow_daily WHERE dayofweek(trip_date) = 2 AND trip_date >= DATE '2025-01-01' AND trip_date < DATE '2025-02-01' ORDER BY trip_date LIMIT 500",
-   "sql_hash": "sha256:b6cac6858f528d3f",
-   "tables": [
-    "whybot.yellow_daily"
-   ],
-   "status": "ok",
-   "columns": [
-    "trip_date",
-    "trips",
-    "avg_total_amount",
-    "weekday_label"
-   ],
-   "rows": [
-    [
-     "2025-01-06",
-     80127,
-     27.62888127597372,
-     "Monday"
-    ],
-    [
-     "2025-01-13",
-     100492,
-     26.1535106277113,
-     "Monday"
-    ],
-    [
-     "2025-01-20",
-     90094,
-     36.480323772947045,
-     "Monday"
-    ],
-    [
-     "2025-01-27",
-     93060,
-     26.388509993551974,
-     "Monday"
-    ]
-   ],
-   "row_count": 4,
-   "elapsed_s": 8.521,
-   "source_label": "LIVE Zetaris Lightning (JDBC)",
-   "recorded_at": null,
-   "error": "",
-   "attempts": [
-    {
-     "sql": "SELECT trip_date, trips, avg_total_amount, CASE WHEN dayofweek(trip_date) = 2 THEN 'Monday' ELSE NULL END AS weekday_label FROM whybot.yellow_daily WHERE dayofweek(trip_date) = 2 AND trip_date >= DATE '2025-01-01' AND trip_date < DATE '2025-02-01' ORDER BY trip_date LIMIT 500",
-     "sql_hash": "sha256:b6cac6858f528d3f",
-     "error": ""
-    }
-   ],
-   "wm_fact_id": "fact_7b1e79540e211660",
+   "wm_fact_id": "fact_d98ef46dcc976e58",
    "truncated": false
   },
   {
@@ -710,2597 +1011,107 @@
   },
   {
    "qid": "Q6",
-   "hypothesis_id": "H4",
-   "purpose": "Attempt to assess zone mix shift by checking if taxi_zones table contains airport/Manhattan identifiers that could be joined to trip data; however, yellow_daily lacks PULocationID/DOLocationID columns, so this query will confirm the data limitation.",
+   "hypothesis_id": "H1",
+   "purpose": "Confirm 2025-01-20 is a federal holiday (Martin Luther King Jr. Day) and baseline Mondays are not holidays. Return holiday_date, holiday_name, is_national for 2025-01-20, 2025-01-06, 2025-01-13, 2025-01-27.",
    "iteration": 2,
-   "sql": "SELECT trip_date, trips, avg_total_amount, avg_trip_distance FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' AND dayofweek(trip_date) = 2 ORDER BY trip_date LIMIT 50",
-   "sql_hash": "sha256:2a360318c3e6c9c0",
+   "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY h.holiday_date LIMIT 500",
+   "sql_hash": "sha256:5a5db8415a7a8e86",
    "tables": [
-    "whybot.yellow_daily"
+    "whybot.us_holidays"
    ],
    "status": "ok",
    "columns": [
-    "trip_date",
-    "trips",
-    "avg_total_amount",
-    "avg_trip_distance"
+    "holiday_date",
+    "holiday_name",
+    "is_national"
    ],
    "rows": [
     [
-     "2025-01-06",
-     80127,
-     27.62888127597372,
-     4.401827349083319
-    ],
-    [
-     "2025-01-13",
-     100492,
-     26.1535106277113,
-     5.534596485292359
-    ],
-    [
      "2025-01-20",
-     90094,
-     36.480323772947045,
-     4.786531511532389
-    ],
-    [
-     "2025-01-27",
-     93060,
-     26.388509993551974,
-     4.52155716741887
+     "Martin Luther King, Jr. Day",
+     true
     ]
    ],
-   "row_count": 4,
-   "elapsed_s": 8.339,
+   "row_count": 1,
+   "elapsed_s": 0.415,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT trip_date, trips, avg_total_amount, avg_trip_distance FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2025-01-01' AND DATE '2025-01-31' AND dayofweek(trip_date) = 2 ORDER BY trip_date LIMIT 50",
-     "sql_hash": "sha256:2a360318c3e6c9c0",
+     "sql": "SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY h.holiday_date LIMIT 500",
+     "sql_hash": "sha256:5a5db8415a7a8e86",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_5b3ed59e7eee554a",
+   "wm_fact_id": "fact_aca57946b3a5a72a",
    "truncated": false
   },
   {
    "qid": "Q7",
-   "hypothesis_id": "H4",
-   "purpose": "Identify airport and Manhattan zone identifiers in taxi_zones to enable future trip-level zone-mix analysis; confirm which LocationID values correspond to JFK, LGA, Newark airports and Manhattan zones.",
-   "iteration": 3,
-   "sql": "SELECT tz.zone, tz.LocationID, CASE WHEN tz.zone LIKE '%JFK%' THEN 'JFK' WHEN tz.zone LIKE '%LGA%' THEN 'LGA' WHEN tz.zone LIKE '%Newark%' THEN 'Newark' WHEN tz.borough = 'Manhattan' THEN 'Manhattan' ELSE 'Other' END AS zone_category FROM NY_TAXI.taxi_zones tz WHERE tz.LocationID IS NOT NULL ORDER BY zone_category, tz.zone LIMIT 500",
-   "sql_hash": "sha256:dbb3c6c781b026c6",
+   "hypothesis_id": "H2",
+   "purpose": "Retrieve precipitation (prcp_mm), snowfall (snow_mm), max temp (tmax_c), min temp (tmin_c) for 2025-01-20 and baseline Mondays 2025-01-06, 2025-01-13, 2025-01-27 from whybot.nyc_weather_daily.",
+   "iteration": 2,
+   "sql": "SELECT w.obs_date, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c FROM whybot.nyc_weather_daily w WHERE w.obs_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY w.obs_date LIMIT 500",
+   "sql_hash": "sha256:0da13032675b02f6",
    "tables": [
-    "NY_TAXI.taxi_zones"
+    "whybot.nyc_weather_daily"
    ],
    "status": "ok",
    "columns": [
-    "zone",
-    "LocationID",
-    "zone_category"
+    "obs_date",
+    "prcp_mm",
+    "snow_mm",
+    "tmax_c",
+    "tmin_c"
    ],
    "rows": [
     [
-     "JFK Airport",
-     "132",
-     "JFK"
-    ],
-    [
-     "JFK Airport",
-     "132",
-     "JFK"
-    ],
-    [
-     "JFK Airport",
-     "132",
-     "JFK"
-    ],
-    [
-     "Alphabet City",
-     "4",
-     "Manhattan"
-    ],
-    [
-     "Alphabet City",
-     "4",
-     "Manhattan"
-    ],
-    [
-     "Alphabet City",
-     "4",
-     "Manhattan"
-    ],
-    [
-     "Battery Park",
-     "12",
-     "Manhattan"
-    ],
-    [
-     "Battery Park",
-     "12",
-     "Manhattan"
-    ],
-    [
-     "Battery Park",
-     "12",
-     "Manhattan"
-    ],
-    [
-     "Battery Park City",
-     "13",
-     "Manhattan"
-    ],
-    [
-     "Battery Park City",
-     "13",
-     "Manhattan"
-    ],
-    [
-     "Battery Park City",
-     "13",
-     "Manhattan"
-    ],
-    [
-     "Bloomingdale",
-     "24",
-     "Manhattan"
-    ],
-    [
-     "Bloomingdale",
-     "24",
-     "Manhattan"
-    ],
-    [
-     "Bloomingdale",
-     "24",
-     "Manhattan"
-    ],
-    [
-     "Central Harlem",
-     "41",
-     "Manhattan"
-    ],
-    [
-     "Central Harlem",
-     "41",
-     "Manhattan"
-    ],
-    [
-     "Central Harlem",
-     "41",
-     "Manhattan"
-    ],
-    [
-     "Central Harlem North",
-     "42",
-     "Manhattan"
-    ],
-    [
-     "Central Harlem North",
-     "42",
-     "Manhattan"
-    ],
-    [
-     "Central Harlem North",
-     "42",
-     "Manhattan"
-    ],
-    [
-     "Central Park",
-     "43",
-     "Manhattan"
-    ],
-    [
-     "Central Park",
-     "43",
-     "Manhattan"
-    ],
-    [
-     "Central Park",
-     "43",
-     "Manhattan"
-    ],
-    [
-     "Chinatown",
-     "45",
-     "Manhattan"
-    ],
-    [
-     "Chinatown",
-     "45",
-     "Manhattan"
-    ],
-    [
-     "Chinatown",
-     "45",
-     "Manhattan"
-    ],
-    [
-     "Clinton East",
-     "48",
-     "Manhattan"
-    ],
-    [
-     "Clinton East",
-     "48",
-     "Manhattan"
-    ],
-    [
-     "Clinton East",
-     "48",
-     "Manhattan"
-    ],
-    [
-     "Clinton West",
-     "50",
-     "Manhattan"
-    ],
-    [
-     "Clinton West",
-     "50",
-     "Manhattan"
-    ],
-    [
-     "Clinton West",
-     "50",
-     "Manhattan"
-    ],
-    [
-     "East Chelsea",
-     "68",
-     "Manhattan"
-    ],
-    [
-     "East Chelsea",
-     "68",
-     "Manhattan"
-    ],
-    [
-     "East Chelsea",
-     "68",
-     "Manhattan"
-    ],
-    [
-     "East Harlem North",
-     "74",
-     "Manhattan"
-    ],
-    [
-     "East Harlem North",
-     "74",
-     "Manhattan"
-    ],
-    [
-     "East Harlem North",
-     "74",
-     "Manhattan"
-    ],
-    [
-     "East Harlem South",
-     "75",
-     "Manhattan"
-    ],
-    [
-     "East Harlem South",
-     "75",
-     "Manhattan"
-    ],
-    [
-     "East Harlem South",
-     "75",
-     "Manhattan"
-    ],
-    [
-     "East Village",
-     "79",
-     "Manhattan"
-    ],
-    [
-     "East Village",
-     "79",
-     "Manhattan"
-    ],
-    [
-     "East Village",
-     "79",
-     "Manhattan"
-    ],
-    [
-     "Financial District North",
-     "87",
-     "Manhattan"
-    ],
-    [
-     "Financial District North",
-     "87",
-     "Manhattan"
-    ],
-    [
-     "Financial District North",
-     "87",
-     "Manhattan"
-    ],
-    [
-     "Financial District South",
-     "88",
-     "Manhattan"
-    ],
-    [
-     "Financial District South",
-     "88",
-     "Manhattan"
-    ],
-    [
-     "Financial District South",
-     "88",
-     "Manhattan"
-    ],
-    [
-     "Flatiron",
-     "90",
-     "Manhattan"
-    ],
-    [
-     "Flatiron",
-     "90",
-     "Manhattan"
-    ],
-    [
-     "Flatiron",
-     "90",
-     "Manhattan"
-    ],
-    [
-     "Garment District",
-     "100",
-     "Manhattan"
-    ],
-    [
-     "Garment District",
-     "100",
-     "Manhattan"
-    ],
-    [
-     "Garment District",
-     "100",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Governor's Island/Ellis Island/Liberty Island",
-     "103",
-     "Manhattan"
-    ],
-    [
-     "Gramercy",
-     "107",
-     "Manhattan"
-    ],
-    [
-     "Gramercy",
-     "107",
-     "Manhattan"
-    ],
-    [
-     "Gramercy",
-     "107",
-     "Manhattan"
-    ],
-    [
-     "Greenwich Village North",
-     "113",
-     "Manhattan"
-    ],
-    [
-     "Greenwich Village North",
-     "113",
-     "Manhattan"
-    ],
-    [
-     "Greenwich Village North",
-     "113",
-     "Manhattan"
-    ],
-    [
-     "Greenwich Village South",
-     "114",
-     "Manhattan"
-    ],
-    [
-     "Greenwich Village South",
-     "114",
-     "Manhattan"
-    ],
-    [
-     "Greenwich Village South",
-     "114",
-     "Manhattan"
-    ],
-    [
-     "Hamilton Heights",
-     "116",
-     "Manhattan"
-    ],
-    [
-     "Hamilton Heights",
-     "116",
-     "Manhattan"
-    ],
-    [
-     "Hamilton Heights",
-     "116",
-     "Manhattan"
-    ],
-    [
-     "Highbridge Park",
-     "120",
-     "Manhattan"
-    ],
-    [
-     "Highbridge Park",
-     "120",
-     "Manhattan"
-    ],
-    [
-     "Highbridge Park",
-     "120",
-     "Manhattan"
-    ],
-    [
-     "Hudson Sq",
-     "125",
-     "Manhattan"
-    ],
-    [
-     "Hudson Sq",
-     "125",
-     "Manhattan"
-    ],
-    [
-     "Hudson Sq",
-     "125",
-     "Manhattan"
-    ],
-    [
-     "Inwood",
-     "127",
-     "Manhattan"
-    ],
-    [
-     "Inwood",
-     "127",
-     "Manhattan"
-    ],
-    [
-     "Inwood",
-     "127",
-     "Manhattan"
-    ],
-    [
-     "Inwood Hill Park",
-     "128",
-     "Manhattan"
-    ],
-    [
-     "Inwood Hill Park",
-     "128",
-     "Manhattan"
-    ],
-    [
-     "Inwood Hill Park",
-     "128",
-     "Manhattan"
-    ],
-    [
-     "Kips Bay",
-     "137",
-     "Manhattan"
-    ],
-    [
-     "Kips Bay",
-     "137",
-     "Manhattan"
-    ],
-    [
-     "Kips Bay",
-     "137",
-     "Manhattan"
-    ],
-    [
-     "Lenox Hill East",
-     "140",
-     "Manhattan"
-    ],
-    [
-     "Lenox Hill East",
-     "140",
-     "Manhattan"
-    ],
-    [
-     "Lenox Hill East",
-     "140",
-     "Manhattan"
-    ],
-    [
-     "Lenox Hill West",
-     "141",
-     "Manhattan"
-    ],
-    [
-     "Lenox Hill West",
-     "141",
-     "Manhattan"
-    ],
-    [
-     "Lenox Hill West",
-     "141",
-     "Manhattan"
-    ],
-    [
-     "Lincoln Square East",
-     "142",
-     "Manhattan"
-    ],
-    [
-     "Lincoln Square East",
-     "142",
-     "Manhattan"
-    ],
-    [
-     "Lincoln Square East",
-     "142",
-     "Manhattan"
-    ],
-    [
-     "Lincoln Square West",
-     "143",
-     "Manhattan"
-    ],
-    [
-     "Lincoln Square West",
-     "143",
-     "Manhattan"
-    ],
-    [
-     "Lincoln Square West",
-     "143",
-     "Manhattan"
-    ],
-    [
-     "Little Italy/NoLiTa",
-     "144",
-     "Manhattan"
-    ],
-    [
-     "Little Italy/NoLiTa",
-     "144",
-     "Manhattan"
-    ],
-    [
-     "Little Italy/NoLiTa",
-     "144",
-     "Manhattan"
-    ],
-    [
-     "Lower East Side",
-     "148",
-     "Manhattan"
-    ],
-    [
-     "Lower East Side",
-     "148",
-     "Manhattan"
-    ],
-    [
-     "Lower East Side",
-     "148",
-     "Manhattan"
-    ],
-    [
-     "Manhattan Valley",
-     "151",
-     "Manhattan"
-    ],
-    [
-     "Manhattan Valley",
-     "151",
-     "Manhattan"
-    ],
-    [
-     "Manhattan Valley",
-     "151",
-     "Manhattan"
-    ],
-    [
-     "Manhattanville",
-     "152",
-     "Manhattan"
-    ],
-    [
-     "Manhattanville",
-     "152",
-     "Manhattan"
-    ],
-    [
-     "Manhattanville",
-     "152",
-     "Manhattan"
-    ],
-    [
-     "Marble Hill",
-     "153",
-     "Manhattan"
-    ],
-    [
-     "Marble Hill",
-     "153",
-     "Manhattan"
-    ],
-    [
-     "Marble Hill",
-     "153",
-     "Manhattan"
-    ],
-    [
-     "Meatpacking/West Village West",
-     "158",
-     "Manhattan"
-    ],
-    [
-     "Meatpacking/West Village West",
-     "158",
-     "Manhattan"
-    ],
-    [
-     "Meatpacking/West Village West",
-     "158",
-     "Manhattan"
-    ],
-    [
-     "Midtown Center",
-     "161",
-     "Manhattan"
-    ],
-    [
-     "Midtown Center",
-     "161",
-     "Manhattan"
-    ],
-    [
-     "Midtown Center",
-     "161",
-     "Manhattan"
-    ],
-    [
-     "Midtown East",
-     "162",
-     "Manhattan"
-    ],
-    [
-     "Midtown East",
-     "162",
-     "Manhattan"
-    ],
-    [
-     "Midtown East",
-     "162",
-     "Manhattan"
-    ],
-    [
-     "Midtown North",
-     "163",
-     "Manhattan"
-    ],
-    [
-     "Midtown North",
-     "163",
-     "Manhattan"
-    ],
-    [
-     "Midtown North",
-     "163",
-     "Manhattan"
-    ],
-    [
-     "Midtown South",
-     "164",
-     "Manhattan"
-    ],
-    [
-     "Midtown South",
-     "164",
-     "Manhattan"
-    ],
-    [
-     "Midtown South",
-     "164",
-     "Manhattan"
-    ],
-    [
-     "Morningside Heights",
-     "166",
-     "Manhattan"
-    ],
-    [
-     "Morningside Heights",
-     "166",
-     "Manhattan"
-    ],
-    [
-     "Morningside Heights",
-     "166",
-     "Manhattan"
-    ],
-    [
-     "Murray Hill",
-     "170",
-     "Manhattan"
-    ],
-    [
-     "Murray Hill",
-     "170",
-     "Manhattan"
-    ],
-    [
-     "Murray Hill",
-     "170",
-     "Manhattan"
-    ],
-    [
-     "Penn Station/Madison Sq West",
-     "186",
-     "Manhattan"
-    ],
-    [
-     "Penn Station/Madison Sq West",
-     "186",
-     "Manhattan"
-    ],
-    [
-     "Penn Station/Madison Sq West",
-     "186",
-     "Manhattan"
-    ],
-    [
-     "Randalls Island",
-     "194",
-     "Manhattan"
-    ],
-    [
-     "Randalls Island",
-     "194",
-     "Manhattan"
-    ],
-    [
-     "Randalls Island",
-     "194",
-     "Manhattan"
-    ],
-    [
-     "Roosevelt Island",
-     "202",
-     "Manhattan"
-    ],
-    [
-     "Roosevelt Island",
-     "202",
-     "Manhattan"
-    ],
-    [
-     "Roosevelt Island",
-     "202",
-     "Manhattan"
-    ],
-    [
-     "Seaport",
-     "209",
-     "Manhattan"
-    ],
-    [
-     "Seaport",
-     "209",
-     "Manhattan"
-    ],
-    [
-     "Seaport",
-     "209",
-     "Manhattan"
-    ],
-    [
-     "SoHo",
-     "211",
-     "Manhattan"
-    ],
-    [
-     "SoHo",
-     "211",
-     "Manhattan"
-    ],
-    [
-     "SoHo",
-     "211",
-     "Manhattan"
-    ],
-    [
-     "Stuy Town/Peter Cooper Village",
-     "224",
-     "Manhattan"
-    ],
-    [
-     "Stuy Town/Peter Cooper Village",
-     "224",
-     "Manhattan"
-    ],
-    [
-     "Stuy Town/Peter Cooper Village",
-     "224",
-     "Manhattan"
-    ],
-    [
-     "Sutton Place/Turtle Bay North",
-     "229",
-     "Manhattan"
-    ],
-    [
-     "Sutton Place/Turtle Bay North",
-     "229",
-     "Manhattan"
-    ],
-    [
-     "Sutton Place/Turtle Bay North",
-     "229",
-     "Manhattan"
-    ],
-    [
-     "Times Sq/Theatre District",
-     "230",
-     "Manhattan"
-    ],
-    [
-     "Times Sq/Theatre District",
-     "230",
-     "Manhattan"
-    ],
-    [
-     "Times Sq/Theatre District",
-     "230",
-     "Manhattan"
-    ],
-    [
-     "TriBeCa/Civic Center",
-     "231",
-     "Manhattan"
-    ],
-    [
-     "TriBeCa/Civic Center",
-     "231",
-     "Manhattan"
-    ],
-    [
-     "TriBeCa/Civic Center",
-     "231",
-     "Manhattan"
-    ],
-    [
-     "Two Bridges/Seward Park",
-     "232",
-     "Manhattan"
-    ],
-    [
-     "Two Bridges/Seward Park",
-     "232",
-     "Manhattan"
-    ],
-    [
-     "Two Bridges/Seward Park",
-     "232",
-     "Manhattan"
-    ],
-    [
-     "UN/Turtle Bay South",
-     "233",
-     "Manhattan"
-    ],
-    [
-     "UN/Turtle Bay South",
-     "233",
-     "Manhattan"
-    ],
-    [
-     "UN/Turtle Bay South",
-     "233",
-     "Manhattan"
-    ],
-    [
-     "Union Sq",
-     "234",
-     "Manhattan"
-    ],
-    [
-     "Union Sq",
-     "234",
-     "Manhattan"
-    ],
-    [
-     "Union Sq",
-     "234",
-     "Manhattan"
-    ],
-    [
-     "Upper East Side North",
-     "236",
-     "Manhattan"
-    ],
-    [
-     "Upper East Side North",
-     "236",
-     "Manhattan"
-    ],
-    [
-     "Upper East Side North",
-     "236",
-     "Manhattan"
-    ],
-    [
-     "Upper East Side South",
-     "237",
-     "Manhattan"
-    ],
-    [
-     "Upper East Side South",
-     "237",
-     "Manhattan"
-    ],
-    [
-     "Upper East Side South",
-     "237",
-     "Manhattan"
-    ],
-    [
-     "Upper West Side North",
-     "238",
-     "Manhattan"
-    ],
-    [
-     "Upper West Side North",
-     "238",
-     "Manhattan"
-    ],
-    [
-     "Upper West Side North",
-     "238",
-     "Manhattan"
-    ],
-    [
-     "Upper West Side South",
-     "239",
-     "Manhattan"
-    ],
-    [
-     "Upper West Side South",
-     "239",
-     "Manhattan"
-    ],
-    [
-     "Upper West Side South",
-     "239",
-     "Manhattan"
-    ],
-    [
-     "Washington Heights North",
-     "243",
-     "Manhattan"
-    ],
-    [
-     "Washington Heights North",
-     "243",
-     "Manhattan"
-    ],
-    [
-     "Washington Heights North",
-     "243",
-     "Manhattan"
-    ],
-    [
-     "Washington Heights South",
-     "244",
-     "Manhattan"
-    ],
-    [
-     "Washington Heights South",
-     "244",
-     "Manhattan"
-    ],
-    [
-     "Washington Heights South",
-     "244",
-     "Manhattan"
-    ],
-    [
-     "West Chelsea/Hudson Yards",
-     "246",
-     "Manhattan"
-    ],
-    [
-     "West Chelsea/Hudson Yards",
-     "246",
-     "Manhattan"
-    ],
-    [
-     "West Chelsea/Hudson Yards",
-     "246",
-     "Manhattan"
-    ],
-    [
-     "West Village",
-     "249",
-     "Manhattan"
-    ],
-    [
-     "West Village",
-     "249",
-     "Manhattan"
-    ],
-    [
-     "West Village",
-     "249",
-     "Manhattan"
-    ],
-    [
-     "World Trade Center",
-     "261",
-     "Manhattan"
-    ],
-    [
-     "World Trade Center",
-     "261",
-     "Manhattan"
-    ],
-    [
-     "World Trade Center",
-     "261",
-     "Manhattan"
-    ],
-    [
-     "Yorkville East",
-     "262",
-     "Manhattan"
-    ],
-    [
-     "Yorkville East",
-     "262",
-     "Manhattan"
-    ],
-    [
-     "Yorkville East",
-     "262",
-     "Manhattan"
-    ],
-    [
-     "Yorkville West",
-     "263",
-     "Manhattan"
-    ],
-    [
-     "Yorkville West",
-     "263",
-     "Manhattan"
-    ],
-    [
-     "Yorkville West",
-     "263",
-     "Manhattan"
-    ],
-    [
-     "Newark Airport",
-     "1",
-     "Newark"
-    ],
-    [
-     "Newark Airport",
-     "1",
-     "Newark"
-    ],
-    [
-     "Newark Airport",
-     "1",
-     "Newark"
-    ],
-    [
-     "Allerton/Pelham Gardens",
-     "3",
-     "Other"
-    ],
-    [
-     "Allerton/Pelham Gardens",
-     "3",
-     "Other"
-    ],
-    [
-     "Allerton/Pelham Gardens",
-     "3",
-     "Other"
-    ],
-    [
-     "Arden Heights",
-     "5",
-     "Other"
-    ],
-    [
-     "Arden Heights",
-     "5",
-     "Other"
-    ],
-    [
-     "Arden Heights",
-     "5",
-     "Other"
-    ],
-    [
-     "Arrochar/Fort Wadsworth",
-     "6",
-     "Other"
-    ],
-    [
-     "Arrochar/Fort Wadsworth",
-     "6",
-     "Other"
-    ],
-    [
-     "Arrochar/Fort Wadsworth",
-     "6",
-     "Other"
-    ],
-    [
-     "Astoria",
-     "7",
-     "Other"
-    ],
-    [
-     "Astoria",
-     "7",
-     "Other"
-    ],
-    [
-     "Astoria",
-     "7",
-     "Other"
-    ],
-    [
-     "Astoria Park",
-     "8",
-     "Other"
-    ],
-    [
-     "Astoria Park",
-     "8",
-     "Other"
-    ],
-    [
-     "Astoria Park",
-     "8",
-     "Other"
-    ],
-    [
-     "Auburndale",
-     "9",
-     "Other"
-    ],
-    [
-     "Auburndale",
-     "9",
-     "Other"
-    ],
-    [
-     "Auburndale",
-     "9",
-     "Other"
-    ],
-    [
-     "Baisley Park",
-     "10",
-     "Other"
-    ],
-    [
-     "Baisley Park",
-     "10",
-     "Other"
-    ],
-    [
-     "Baisley Park",
-     "10",
-     "Other"
-    ],
-    [
-     "Bath Beach",
-     "11",
-     "Other"
-    ],
-    [
-     "Bath Beach",
-     "11",
-     "Other"
-    ],
-    [
-     "Bath Beach",
-     "11",
-     "Other"
-    ],
-    [
-     "Bay Ridge",
-     "14",
-     "Other"
-    ],
-    [
-     "Bay Ridge",
-     "14",
-     "Other"
-    ],
-    [
-     "Bay Ridge",
-     "14",
-     "Other"
-    ],
-    [
-     "Bay Terrace/Fort Totten",
-     "15",
-     "Other"
-    ],
-    [
-     "Bay Terrace/Fort Totten",
-     "15",
-     "Other"
-    ],
-    [
-     "Bay Terrace/Fort Totten",
-     "15",
-     "Other"
-    ],
-    [
-     "Bayside",
-     "16",
-     "Other"
-    ],
-    [
-     "Bayside",
-     "16",
-     "Other"
-    ],
-    [
-     "Bayside",
-     "16",
-     "Other"
-    ],
-    [
-     "Bedford",
-     "17",
-     "Other"
-    ],
-    [
-     "Bedford",
-     "17",
-     "Other"
-    ],
-    [
-     "Bedford",
-     "17",
-     "Other"
-    ],
-    [
-     "Bedford Park",
-     "18",
-     "Other"
-    ],
-    [
-     "Bedford Park",
-     "18",
-     "Other"
-    ],
-    [
-     "Bedford Park",
-     "18",
-     "Other"
-    ],
-    [
-     "Bellerose",
-     "19",
-     "Other"
-    ],
-    [
-     "Bellerose",
-     "19",
-     "Other"
-    ],
-    [
-     "Bellerose",
-     "19",
-     "Other"
-    ],
-    [
-     "Belmont",
-     "20",
-     "Other"
-    ],
-    [
-     "Belmont",
-     "20",
-     "Other"
-    ],
-    [
-     "Belmont",
-     "20",
-     "Other"
-    ],
-    [
-     "Bensonhurst East",
-     "21",
-     "Other"
-    ],
-    [
-     "Bensonhurst East",
-     "21",
-     "Other"
-    ],
-    [
-     "Bensonhurst East",
-     "21",
-     "Other"
-    ],
-    [
-     "Bensonhurst West",
-     "22",
-     "Other"
-    ],
-    [
-     "Bensonhurst West",
-     "22",
-     "Other"
-    ],
-    [
-     "Bensonhurst West",
-     "22",
-     "Other"
-    ],
-    [
-     "Bloomfield/Emerson Hill",
-     "23",
-     "Other"
-    ],
-    [
-     "Bloomfield/Emerson Hill",
-     "23",
-     "Other"
-    ],
-    [
-     "Bloomfield/Emerson Hill",
-     "23",
-     "Other"
-    ],
-    [
-     "Boerum Hill",
-     "25",
-     "Other"
-    ],
-    [
-     "Boerum Hill",
-     "25",
-     "Other"
-    ],
-    [
-     "Boerum Hill",
-     "25",
-     "Other"
-    ],
-    [
-     "Borough Park",
-     "26",
-     "Other"
-    ],
-    [
-     "Borough Park",
-     "26",
-     "Other"
-    ],
-    [
-     "Borough Park",
-     "26",
-     "Other"
-    ],
-    [
-     "Breezy Point/Fort Tilden/Riis Beach",
-     "27",
-     "Other"
-    ],
-    [
-     "Breezy Point/Fort Tilden/Riis Beach",
-     "27",
-     "Other"
-    ],
-    [
-     "Breezy Point/Fort Tilden/Riis Beach",
-     "27",
-     "Other"
-    ],
-    [
-     "Briarwood/Jamaica Hills",
-     "28",
-     "Other"
-    ],
-    [
-     "Briarwood/Jamaica Hills",
-     "28",
-     "Other"
-    ],
-    [
-     "Briarwood/Jamaica Hills",
-     "28",
-     "Other"
-    ],
-    [
-     "Brighton Beach",
-     "29",
-     "Other"
-    ],
-    [
-     "Brighton Beach",
-     "29",
-     "Other"
-    ],
-    [
-     "Brighton Beach",
-     "29",
-     "Other"
-    ],
-    [
-     "Broad Channel",
-     "30",
-     "Other"
-    ],
-    [
-     "Broad Channel",
-     "30",
-     "Other"
-    ],
-    [
-     "Broad Channel",
-     "30",
-     "Other"
-    ],
-    [
-     "Bronx Park",
-     "31",
-     "Other"
-    ],
-    [
-     "Bronx Park",
-     "31",
-     "Other"
-    ],
-    [
-     "Bronx Park",
-     "31",
-     "Other"
-    ],
-    [
-     "Bronxdale",
-     "32",
-     "Other"
-    ],
-    [
-     "Bronxdale",
-     "32",
-     "Other"
-    ],
-    [
-     "Bronxdale",
-     "32",
-     "Other"
-    ],
-    [
-     "Brooklyn Heights",
-     "33",
-     "Other"
-    ],
-    [
-     "Brooklyn Heights",
-     "33",
-     "Other"
-    ],
-    [
-     "Brooklyn Heights",
-     "33",
-     "Other"
-    ],
-    [
-     "Brooklyn Navy Yard",
-     "34",
-     "Other"
-    ],
-    [
-     "Brooklyn Navy Yard",
-     "34",
-     "Other"
-    ],
-    [
-     "Brooklyn Navy Yard",
-     "34",
-     "Other"
-    ],
-    [
-     "Brownsville",
-     "35",
-     "Other"
-    ],
-    [
-     "Brownsville",
-     "35",
-     "Other"
-    ],
-    [
-     "Brownsville",
-     "35",
-     "Other"
-    ],
-    [
-     "Bushwick North",
-     "36",
-     "Other"
-    ],
-    [
-     "Bushwick North",
-     "36",
-     "Other"
-    ],
-    [
-     "Bushwick North",
-     "36",
-     "Other"
-    ],
-    [
-     "Bushwick South",
-     "37",
-     "Other"
-    ],
-    [
-     "Bushwick South",
-     "37",
-     "Other"
-    ],
-    [
-     "Bushwick South",
-     "37",
-     "Other"
-    ],
-    [
-     "Cambria Heights",
-     "38",
-     "Other"
-    ],
-    [
-     "Cambria Heights",
-     "38",
-     "Other"
-    ],
-    [
-     "Cambria Heights",
-     "38",
-     "Other"
-    ],
-    [
-     "Canarsie",
-     "39",
-     "Other"
-    ],
-    [
-     "Canarsie",
-     "39",
-     "Other"
-    ],
-    [
-     "Canarsie",
-     "39",
-     "Other"
-    ],
-    [
-     "Carroll Gardens",
-     "40",
-     "Other"
-    ],
-    [
-     "Carroll Gardens",
-     "40",
-     "Other"
-    ],
-    [
-     "Carroll Gardens",
-     "40",
-     "Other"
-    ],
-    [
-     "Charleston/Tottenville",
-     "44",
-     "Other"
-    ],
-    [
-     "Charleston/Tottenville",
-     "44",
-     "Other"
-    ],
-    [
-     "Charleston/Tottenville",
-     "44",
-     "Other"
-    ],
-    [
-     "City Island",
-     "46",
-     "Other"
-    ],
-    [
-     "City Island",
-     "46",
-     "Other"
-    ],
-    [
-     "City Island",
-     "46",
-     "Other"
-    ],
-    [
-     "Claremont/Bathgate",
-     "47",
-     "Other"
-    ],
-    [
-     "Claremont/Bathgate",
-     "47",
-     "Other"
-    ],
-    [
-     "Claremont/Bathgate",
-     "47",
-     "Other"
-    ],
-    [
-     "Clinton Hill",
-     "49",
-     "Other"
-    ],
-    [
-     "Clinton Hill",
-     "49",
-     "Other"
-    ],
-    [
-     "Clinton Hill",
-     "49",
-     "Other"
-    ],
-    [
-     "Co-Op City",
-     "51",
-     "Other"
-    ],
-    [
-     "Co-Op City",
-     "51",
-     "Other"
-    ],
-    [
-     "Co-Op City",
-     "51",
-     "Other"
-    ],
-    [
-     "Cobble Hill",
-     "52",
-     "Other"
-    ],
-    [
-     "Cobble Hill",
-     "52",
-     "Other"
-    ],
-    [
-     "Cobble Hill",
-     "52",
-     "Other"
-    ],
-    [
-     "College Point",
-     "53",
-     "Other"
-    ],
-    [
-     "College Point",
-     "53",
-     "Other"
-    ],
-    [
-     "College Point",
-     "53",
-     "Other"
-    ],
-    [
-     "Columbia Street",
-     "54",
-     "Other"
-    ],
-    [
-     "Columbia Street",
-     "54",
-     "Other"
-    ],
-    [
-     "Columbia Street",
-     "54",
-     "Other"
-    ],
-    [
-     "Coney Island",
-     "55",
-     "Other"
-    ],
-    [
-     "Coney Island",
-     "55",
-     "Other"
-    ],
-    [
-     "Coney Island",
-     "55",
-     "Other"
-    ],
-    [
-     "Corona",
-     "56",
-     "Other"
-    ],
-    [
-     "Corona",
-     "56",
-     "Other"
-    ],
-    [
-     "Corona",
-     "56",
-     "Other"
-    ],
-    [
-     "Corona",
-     "56",
-     "Other"
-    ],
-    [
-     "Corona",
-     "56",
-     "Other"
-    ],
-    [
-     "Corona",
-     "56",
-     "Other"
-    ],
-    [
-     "Country Club",
-     "58",
-     "Other"
-    ],
-    [
-     "Country Club",
-     "58",
-     "Other"
-    ],
-    [
-     "Country Club",
-     "58",
-     "Other"
-    ],
-    [
-     "Crotona Park",
-     "59",
-     "Other"
-    ],
-    [
-     "Crotona Park",
-     "59",
-     "Other"
-    ],
-    [
-     "Crotona Park",
-     "59",
-     "Other"
-    ],
-    [
-     "Crotona Park East",
-     "60",
-     "Other"
-    ],
-    [
-     "Crotona Park East",
-     "60",
-     "Other"
-    ],
-    [
-     "Crotona Park East",
-     "60",
-     "Other"
-    ],
-    [
-     "Crown Heights North",
-     "61",
-     "Other"
-    ],
-    [
-     "Crown Heights North",
-     "61",
-     "Other"
-    ],
-    [
-     "Crown Heights North",
-     "61",
-     "Other"
-    ],
-    [
-     "Crown Heights South",
-     "62",
-     "Other"
-    ],
-    [
-     "Crown Heights South",
-     "62",
-     "Other"
-    ],
-    [
-     "Crown Heights South",
-     "62",
-     "Other"
-    ],
-    [
-     "Cypress Hills",
-     "63",
-     "Other"
-    ],
-    [
-     "Cypress Hills",
-     "63",
-     "Other"
-    ],
-    [
-     "Cypress Hills",
-     "63",
-     "Other"
-    ],
-    [
-     "DUMBO/Vinegar Hill",
-     "66",
-     "Other"
-    ],
-    [
-     "DUMBO/Vinegar Hill",
-     "66",
-     "Other"
-    ],
-    [
-     "DUMBO/Vinegar Hill",
-     "66",
-     "Other"
-    ],
-    [
-     "Douglaston",
-     "64",
-     "Other"
-    ],
-    [
-     "Douglaston",
-     "64",
-     "Other"
-    ],
-    [
-     "Douglaston",
-     "64",
-     "Other"
-    ],
-    [
-     "Downtown Brooklyn/MetroTech",
-     "65",
-     "Other"
-    ],
-    [
-     "Downtown Brooklyn/MetroTech",
-     "65",
-     "Other"
-    ],
-    [
-     "Downtown Brooklyn/MetroTech",
-     "65",
-     "Other"
-    ],
-    [
-     "Dyker Heights",
-     "67",
-     "Other"
-    ],
-    [
-     "Dyker Heights",
-     "67",
-     "Other"
-    ],
-    [
-     "Dyker Heights",
-     "67",
-     "Other"
-    ],
-    [
-     "East Concourse/Concourse Village",
-     "69",
-     "Other"
-    ],
-    [
-     "East Concourse/Concourse Village",
-     "69",
-     "Other"
-    ],
-    [
-     "East Concourse/Concourse Village",
-     "69",
-     "Other"
-    ],
-    [
-     "East Elmhurst",
-     "70",
-     "Other"
-    ],
-    [
-     "East Elmhurst",
-     "70",
-     "Other"
-    ],
-    [
-     "East Elmhurst",
-     "70",
-     "Other"
-    ],
-    [
-     "East Flatbush/Farragut",
-     "71",
-     "Other"
-    ],
-    [
-     "East Flatbush/Farragut",
-     "71",
-     "Other"
-    ],
-    [
-     "East Flatbush/Farragut",
-     "71",
-     "Other"
-    ],
-    [
-     "East Flatbush/Remsen Village",
-     "72",
-     "Other"
-    ],
-    [
-     "East Flatbush/Remsen Village",
-     "72",
-     "Other"
-    ],
-    [
-     "East Flatbush/Remsen Village",
-     "72",
-     "Other"
-    ],
-    [
-     "East Flushing",
-     "73",
-     "Other"
-    ],
-    [
-     "East Flushing",
-     "73",
-     "Other"
-    ],
-    [
-     "East Flushing",
-     "73",
-     "Other"
-    ],
-    [
-     "East New York",
-     "76",
-     "Other"
-    ],
-    [
-     "East New York",
-     "76",
-     "Other"
-    ],
-    [
-     "East New York",
-     "76",
-     "Other"
-    ],
-    [
-     "East New York/Pennsylvania Avenue",
-     "77",
-     "Other"
-    ],
-    [
-     "East New York/Pennsylvania Avenue",
-     "77",
-     "Other"
-    ],
-    [
-     "East New York/Pennsylvania Avenue",
-     "77",
-     "Other"
-    ],
-    [
-     "East Tremont",
-     "78",
-     "Other"
-    ],
-    [
-     "East Tremont",
-     "78",
-     "Other"
-    ],
-    [
-     "East Tremont",
-     "78",
-     "Other"
-    ],
-    [
-     "East Williamsburg",
-     "80",
-     "Other"
-    ],
-    [
-     "East Williamsburg",
-     "80",
-     "Other"
-    ],
-    [
-     "East Williamsburg",
-     "80",
-     "Other"
-    ],
-    [
-     "Eastchester",
-     "81",
-     "Other"
-    ],
-    [
-     "Eastchester",
-     "81",
-     "Other"
-    ],
-    [
-     "Eastchester",
-     "81",
-     "Other"
-    ],
-    [
-     "Elmhurst",
-     "82",
-     "Other"
-    ],
-    [
-     "Elmhurst",
-     "82",
-     "Other"
-    ],
-    [
-     "Elmhurst",
-     "82",
-     "Other"
-    ],
-    [
-     "Elmhurst/Maspeth",
-     "83",
-     "Other"
-    ],
-    [
-     "Elmhurst/Maspeth",
-     "83",
-     "Other"
-    ],
-    [
-     "Elmhurst/Maspeth",
-     "83",
-     "Other"
-    ],
-    [
-     "Eltingville/Annadale/Prince's Bay",
-     "84",
-     "Other"
-    ],
-    [
-     "Eltingville/Annadale/Prince's Bay",
-     "84",
-     "Other"
-    ],
-    [
-     "Eltingville/Annadale/Prince's Bay",
-     "84",
-     "Other"
-    ],
-    [
-     "Erasmus",
-     "85",
-     "Other"
-    ],
-    [
-     "Erasmus",
-     "85",
-     "Other"
-    ],
-    [
-     "Erasmus",
-     "85",
-     "Other"
-    ],
-    [
-     "Far Rockaway",
-     "86",
-     "Other"
-    ],
-    [
-     "Far Rockaway",
-     "86",
-     "Other"
-    ],
-    [
-     "Far Rockaway",
-     "86",
-     "Other"
-    ],
-    [
-     "Flatbush/Ditmas Park",
-     "89",
-     "Other"
-    ],
-    [
-     "Flatbush/Ditmas Park",
-     "89",
-     "Other"
-    ],
-    [
-     "Flatbush/Ditmas Park",
-     "89",
-     "Other"
-    ],
-    [
-     "Flatlands",
-     "91",
-     "Other"
-    ],
-    [
-     "Flatlands",
-     "91",
-     "Other"
-    ],
-    [
-     "Flatlands",
-     "91",
-     "Other"
-    ],
-    [
-     "Flushing",
-     "92",
-     "Other"
-    ],
-    [
-     "Flushing",
-     "92",
-     "Other"
-    ],
-    [
-     "Flushing",
-     "92",
-     "Other"
-    ],
-    [
-     "Flushing Meadows-Corona Park",
-     "93",
-     "Other"
-    ],
-    [
-     "Flushing Meadows-Corona Park",
-     "93",
-     "Other"
-    ],
-    [
-     "Flushing Meadows-Corona Park",
-     "93",
-     "Other"
-    ],
-    [
-     "Fordham South",
-     "94",
-     "Other"
-    ],
-    [
-     "Fordham South",
-     "94",
-     "Other"
-    ],
-    [
-     "Fordham South",
-     "94",
-     "Other"
-    ],
-    [
-     "Forest Hills",
-     "95",
-     "Other"
-    ],
-    [
-     "Forest Hills",
-     "95",
-     "Other"
-    ],
-    [
-     "Forest Hills",
-     "95",
-     "Other"
-    ],
-    [
-     "Forest Park/Highland Park",
-     "96",
-     "Other"
-    ],
-    [
-     "Forest Park/Highland Park",
-     "96",
-     "Other"
-    ],
-    [
-     "Forest Park/Highland Park",
-     "96",
-     "Other"
-    ],
-    [
-     "Fort Greene",
-     "97",
-     "Other"
-    ],
-    [
-     "Fort Greene",
-     "97",
-     "Other"
-    ],
-    [
-     "Fort Greene",
-     "97",
-     "Other"
-    ],
-    [
-     "Fresh Meadows",
-     "98",
-     "Other"
-    ],
-    [
-     "Fresh Meadows",
-     "98",
-     "Other"
-    ],
-    [
-     "Fresh Meadows",
-     "98",
-     "Other"
-    ],
-    [
-     "Freshkills Park",
-     "99",
-     "Other"
-    ],
-    [
-     "Freshkills Park",
-     "99",
-     "Other"
-    ],
-    [
-     "Freshkills Park",
-     "99",
-     "Other"
-    ],
-    [
-     "Glen Oaks",
-     "101",
-     "Other"
-    ],
-    [
-     "Glen Oaks",
-     "101",
-     "Other"
-    ],
-    [
-     "Glen Oaks",
-     "101",
-     "Other"
-    ],
-    [
-     "Glendale",
-     "102",
-     "Other"
-    ],
-    [
-     "Glendale",
-     "102",
-     "Other"
-    ],
-    [
-     "Glendale",
-     "102",
-     "Other"
-    ],
-    [
-     "Gowanus",
-     "106",
-     "Other"
-    ],
-    [
-     "Gowanus",
-     "106",
-     "Other"
-    ],
-    [
-     "Gowanus",
-     "106",
-     "Other"
-    ],
-    [
-     "Gravesend",
-     "108",
-     "Other"
-    ],
-    [
-     "Gravesend",
-     "108",
-     "Other"
-    ],
-    [
-     "Gravesend",
-     "108",
-     "Other"
-    ],
-    [
-     "Great Kills",
-     "109",
-     "Other"
-    ],
-    [
-     "Great Kills",
-     "109",
-     "Other"
-    ],
-    [
-     "Great Kills",
-     "109",
-     "Other"
-    ],
-    [
-     "Great Kills Park",
-     "110",
-     "Other"
-    ],
-    [
-     "Great Kills Park",
-     "110",
-     "Other"
-    ],
-    [
-     "Great Kills Park",
-     "110",
-     "Other"
-    ],
-    [
-     "Green-Wood Cemetery",
-     "111",
-     "Other"
-    ],
-    [
-     "Green-Wood Cemetery",
-     "111",
-     "Other"
-    ],
-    [
-     "Green-Wood Cemetery",
-     "111",
-     "Other"
-    ],
-    [
-     "Greenpoint",
-     "112",
-     "Other"
-    ],
-    [
-     "Greenpoint",
-     "112",
-     "Other"
-    ],
-    [
-     "Greenpoint",
-     "112",
-     "Other"
-    ],
-    [
-     "Grymes Hill/Clifton",
-     "115",
-     "Other"
-    ],
-    [
-     "Grymes Hill/Clifton",
-     "115",
-     "Other"
-    ],
-    [
-     "Grymes Hill/Clifton",
-     "115",
-     "Other"
-    ],
-    [
-     "Hammels/Arverne",
-     "117",
-     "Other"
-    ],
-    [
-     "Hammels/Arverne",
-     "117",
-     "Other"
-    ],
-    [
-     "Hammels/Arverne",
-     "117",
-     "Other"
-    ],
-    [
-     "Heartland Village/Todt Hill",
-     "118",
-     "Other"
-    ],
-    [
-     "Heartland Village/Todt Hill",
-     "118",
-     "Other"
-    ],
-    [
-     "Heartland Village/Todt Hill",
-     "118",
-     "Other"
-    ],
-    [
-     "Highbridge",
-     "119",
-     "Other"
-    ],
-    [
-     "Highbridge",
-     "119",
-     "Other"
-    ],
-    [
-     "Highbridge",
-     "119",
-     "Other"
-    ],
-    [
-     "Hillcrest/Pomonok",
-     "121",
-     "Other"
-    ],
-    [
-     "Hillcrest/Pomonok",
-     "121",
-     "Other"
-    ],
-    [
-     "Hillcrest/Pomonok",
-     "121",
-     "Other"
-    ],
-    [
-     "Hollis",
-     "122",
-     "Other"
-    ],
-    [
-     "Hollis",
-     "122",
-     "Other"
-    ],
-    [
-     "Hollis",
-     "122",
-     "Other"
-    ],
-    [
-     "Homecrest",
-     "123",
-     "Other"
-    ],
-    [
-     "Homecrest",
-     "123",
-     "Other"
-    ],
-    [
-     "Homecrest",
-     "123",
-     "Other"
-    ],
-    [
-     "Howard Beach",
-     "124",
-     "Other"
-    ],
-    [
-     "Howard Beach",
-     "124",
-     "Other"
+     "2025-01-06",
+     2.0,
+     23,
+     -1.0,
+     -5.5
+    ],
+    [
+     "2025-01-13",
+     0.0,
+     0,
+     5.6,
+     0.6
+    ],
+    [
+     "2025-01-20",
+     0.0,
+     0,
+     -3.2,
+     -8.2
+    ],
+    [
+     "2025-01-27",
+     0.0,
+     0,
+     4.4,
+     -0.5
     ]
    ],
-   "row_count": 500,
-   "elapsed_s": 8.12,
+   "row_count": 4,
+   "elapsed_s": 0.66,
    "source_label": "LIVE Zetaris Lightning (JDBC)",
    "recorded_at": null,
    "error": "",
    "attempts": [
     {
-     "sql": "SELECT tz.zone, tz.LocationID, CASE WHEN tz.zone LIKE '%JFK%' THEN 'JFK' WHEN tz.zone LIKE '%LGA%' THEN 'LGA' WHEN tz.zone LIKE '%Newark%' THEN 'Newark' WHEN tz.borough = 'Manhattan' THEN 'Manhattan' ELSE 'Other' END AS zone_category FROM NY_TAXI.taxi_zones tz WHERE tz.LocationID IS NOT NULL ORDER BY zone_category, tz.zone LIMIT 500",
-     "sql_hash": "sha256:dbb3c6c781b026c6",
+     "sql": "SELECT w.obs_date, w.prcp_mm, w.snow_mm, w.tmax_c, w.tmin_c FROM whybot.nyc_weather_daily w WHERE w.obs_date IN (DATE '2025-01-20', DATE '2025-01-06', DATE '2025-01-13', DATE '2025-01-27') ORDER BY w.obs_date LIMIT 500",
+     "sql_hash": "sha256:0da13032675b02f6",
      "error": ""
     }
    ],
-   "wm_fact_id": "fact_8522b8c2bfac3345",
+   "wm_fact_id": "fact_818fe22ae003eea3",
    "truncated": false
   }
  ],
- "iterations": 3,
+ "iterations": 2,
  "data_source": {
   "label": "LIVE Zetaris Lightning (JDBC)",
   "kind": "live"
@@ -3309,26 +1120,17 @@
   "recalled": [
    {
     "id": "mem-1",
-    "relevance": 0.286,
-    "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> answered: Saturday 21 Dec 2024 taxi trips were essentially unchanged despite heavy snowfall (supported: H0, H1, H3, H5, H6)",
+    "relevance": 0.3,
+    "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> insufficient_evidence: No measurable drop in NYC yellow taxi trips on 21 Dec 2024 despite snowfall (supported: none)",
     "tags": [
      "investigation"
     ],
     "source": "agent:writer:recorded-example-2-snow-saturday"
    },
    {
-    "id": "mem-4",
-    "relevance": 0.202,
-    "content": "Lesson: avg_total_amount includes tip and surcharges; if analyzing base fare only, adjust the query to exclude those columns.",
-    "tags": [
-     "lesson"
-    ],
-    "source": "agent:writer:recorded-example-2-snow-saturday"
-   },
-   {
-    "id": "mem-5",
-    "relevance": 0.193,
-    "content": "Lesson (SQL repair on whybot.yellow_daily): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[UNRESOLVED_COLUMN.WITH_S' was fixed by: SELECT trip_date, COUNT(*) AS trips FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-12-01' AND DATE '2024-12-31' GROUP BY trip_date ORDER BY trip_date LIMIT 50",
+    "id": "mem-12",
+    "relevance": 0.278,
+    "content": "Lesson (SQL repair on whybot.yellow_daily, TPCDS_DB.date_dim): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The' was fixed by: SELECT y.trip_date, MAX(CASE WHEN d.d_date = DATE '2024-12-21' THEN y.trips END) AS target_trips, AVG(CASE WHEN d.d_date IN (DATE '2024-12-07', DATE '2024-12-14', DATE '2024-12-28') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date ",
     "tags": [
      "lesson",
      "sql_repair"
@@ -3336,18 +1138,38 @@
     "source": "agent:executor:recorded-example-2-snow-saturday"
    },
    {
-    "id": "mem-2",
-    "relevance": 0.175,
-    "content": "Lesson: yellow_daily table aggregates by trip_date; ensure weekday filtering is applied correctly when comparing against a specific Saturday.",
+    "id": "mem-7",
+    "relevance": 0.275,
+    "content": "Investigation recorded-example-2-snow-saturday: Q='Did the snowfall on Saturday 21 Dec 2024 reduce NYC yellow taxi trips compared with the other Saturdays in December 2024, and why?' -> answered: Saturday 21 Dec 2024 taxi trips essentially unchanged despite heavy snowfall (supported: none)",
     "tags": [
-     "lesson"
+     "investigation"
     ],
     "source": "agent:writer:recorded-example-2-snow-saturday"
    },
    {
-    "id": "mem-6",
-    "relevance": 0.165,
-    "content": "Lesson (SQL repair on whybot.us_holidays): error 'RESULT SANITY CHECK FAILED: query returned 0 rows (check filters and date formats)' was fixed by: SELECT h.holiday_date, h.holiday_name, h.is_national FROM whybot.us_holidays h WHERE h.holiday_date = DATE '2024-12-20' OR h.holiday_date = DATE '2024-12-23' ORDER BY h.holiday_date LIMIT 500",
+    "id": "mem-11",
+    "relevance": 0.235,
+    "content": "Lesson (SQL repair on whybot.yellow_daily): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The' was fixed by: SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-12-21' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date IN (DATE '2024-12-07', DATE '2024-12-14', DATE '2024-12-28') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y WHERE y.trip_date IN (DATE '2024-12-07', DATE",
+    "tags": [
+     "lesson",
+     "sql_repair"
+    ],
+    "source": "agent:executor:recorded-example-2-snow-saturday"
+   },
+   {
+    "id": "mem-13",
+    "relevance": 0.235,
+    "content": "Lesson (SQL repair on whybot.yellow_daily): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The' was fixed by: SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-12-21' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date IN (DATE '2024-12-07', DATE '2024-12-14', DATE '2024-12-28') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y WHERE y.trip_date IN (DATE '2024-12-07', DATE",
+    "tags": [
+     "lesson",
+     "sql_repair"
+    ],
+    "source": "agent:executor:recorded-example-2-snow-saturday"
+   },
+   {
+    "id": "mem-5",
+    "relevance": 0.235,
+    "content": "Lesson (SQL repair on whybot.yellow_daily): error 'Zetaris error: java.sql.SQLException: org.apache.hive.service.cli.HiveSQLException: com.zetaris.lightning.error.LightningException: <<<[MISSING_AGGREGATION] The' was fixed by: SELECT y.trip_date, MAX(CASE WHEN y.trip_date = DATE '2024-12-21' THEN y.trips END) AS target_trips, AVG(CASE WHEN y.trip_date IN (DATE '2024-12-07', DATE '2024-12-14', DATE '2024-12-28') THEN y.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y WHERE y.trip_date IN (DATE '2024-12-07', DATE",
     "tags": [
      "lesson",
      "sql_repair"
@@ -3366,7 +1188,7 @@
  "question": "Why did the average total amount per yellow taxi trip jump on Monday 20 Jan 2025 compared with the other Mondays in January 2025?",
  "trace_id": "recorded-example-3-mlk-fare",
  "log_file": "logs/recorded-example-3-mlk-fare.jsonl",
- "execution_time_seconds": 751.9,
+ "execution_time_seconds": 519.6,
  "agents": [
   {
    "name": "Planner",
@@ -3400,8 +1222,8 @@
   }
  ],
  "wall_clock": {
-  "started_at": "2026-10-22T14:15:26+00:00",
-  "finished_at": "2026-10-22T14:27:58+00:00",
-  "seconds": 751.9
+  "started_at": "2026-10-23T14:39:36+00:00",
+  "finished_at": "2026-10-23T14:48:16+00:00",
+  "seconds": 519.6
  }
 }
