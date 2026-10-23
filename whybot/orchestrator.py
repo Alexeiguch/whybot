@@ -321,10 +321,11 @@ class WhyBot:
             prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic
-            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version) for c in claims.claims}
+            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version, plan_text=plan_text) for c in claims.claims}
             if self._checks_version < CHECKS_VERSION:
                 for c in claims.claims:
-                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question).problems if p not in checks[c.cid].problems]
+                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question, plan_text=plan_text).problems
+                             if p not in checks[c.cid].problems]
                     self._note_shadow(f"iteration {it} {c.cid}", extra)
             for cid, ch in checks.items():
                 tr.emit("Critic", "number_check", output_summary=f"{cid}: {'PASS' if ch.ok else 'REJECT ' + '; '.join(ch.problems)}"[:400],
@@ -387,7 +388,8 @@ class WhyBot:
             tr.emit("Orchestrator", "escalate", output_summary="insufficient evidence: answer will state what is and is not known", status="escalated")
 
         final = self._write(question, status, decision, claims, report, evidence, writer, tr, dq_notes or [],
-                            hyp_kinds={k: h.kind for k, h in hypotheses.items()})
+                            hyp_kinds={k: h.kind for k, h in hypotheses.items()},
+                            plan_text="\n".join(f"{h.support_if} {h.refute_if}" for h in hypotheses.values()))
         self._remember(mem, tr, run_id, question, status, final, evidence, report)
         if mem and markov_steps:
             rec = self._safe(tr, lambda: mem.record_run(question, markov_steps + ["[TASK_COMPLETE]"]))
@@ -612,7 +614,8 @@ class WhyBot:
                     f"date(s): {items}. Holidays come from Nager.Date only [DQ1 {tag}].")
         return ans.model_copy(update={"caveats": keep})
 
-    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=(), hyp_kinds=None) -> FinalAnswer:
+    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=(), hyp_kinds=None,
+               plan_text="") -> FinalAnswer:
         sup_ids = set(decision.supported_cids)
         verdicts = {v.cid: v for v in (report.verdicts if report else [])}
         supported = [{**c.model_dump(), "critic": verdicts[c.cid].reason} for c in claims.claims if c.cid in sup_ids]
@@ -636,9 +639,10 @@ class WhyBot:
             sup_text = [(hyp_kinds or {}).get(c["hypothesis_id"], "other") + ": " + c["statement"]
                         for c in supported if c["direction"] == "supports"]
             probs = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, version=self._checks_version,
-                                   supported_statements=sup_text)
+                                   supported_statements=sup_text, plan_text=plan_text)
             if self._checks_version < CHECKS_VERSION:
-                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, supported_statements=sup_text)
+                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, supported_statements=sup_text,
+                                     plan_text=plan_text)
                 self._note_shadow("Writer draft", [p for p in now if p not in probs])
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []

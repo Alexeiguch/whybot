@@ -24,7 +24,8 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #   5: units: a number or unit word must match the unit of its column (TLC distances are miles, never km); the Analyst
 #      and Writer prompts list the column units; a value labelled average/mean/baseline must equal an aggregate of the
 #      cited rows (to its stated precision), not just appear somewhere in them; 'higher than the comparison days' must
-#      hold for every compared day (or be worded 'on average' and hold against their mean)
+#      hold for every compared day (or be worded 'on average' and hold against their mean); a threshold % from the plan's
+#      hypotheses ('within 5%') may be quoted only beside the backed, measured change it is compared with
 CHECKS_VERSION = 5
 
 
@@ -83,7 +84,8 @@ class NumericCheck:
     corrections: list[str] = field(default_factory=list)
 
 
-def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "", version: int = CHECKS_VERSION) -> NumericCheck:
+def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "", version: int = CHECKS_VERSION,
+                        plan_text: str = "") -> NumericCheck:
     """Every cited value must appear in the named column of the named, successful query result, and benign weather
     wording must not describe a day the weather evidence shows as wet or snowy. ('No data-quality flags' is checked on
     the final answer, where the run's data-quality caveat is rendered.)"""
@@ -122,7 +124,7 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
         if not any(value_matches(cv.value, r[idx]) for r in rows):
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
     corrections: list[str] = []
-    problems += check_derived_values(claim, corrections)
+    problems += check_derived_values(claim, corrections, plan_thresholds(plan_text) if version >= 5 else None)
     problems += check_weather_wording(claim.statement, evidence, context)
     if version >= 5:
         problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
@@ -214,7 +216,7 @@ def check_direction(claim: Claim) -> list[str]:
     return []
 
 
-def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> list[str]:
+def check_derived_values(claim: Claim, corrections: list[str] | None = None, plan_pcts: set[float] | None = None) -> list[str]:
     """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
     recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
     the model's. Values further off are rejected. Every % or Nx ratio in the statement must then be one of the
@@ -253,10 +255,14 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
     problems += check_direction(claim)
     for left in re.findall(r"\{[A-Za-z_]\w*\}", claim.statement):
         problems.append(f"placeholder {left} has no derived value with that name")
-    for p in [float(m) for m in _PCT.findall(claim.statement)]:
+    statement = claim.statement
+    if plan_pcts:  # v5: a plan threshold next to the measured change it is compared with is not a measurement
+        statement, thr = plan_threshold_mentions(statement, plan_pcts, ok_values)
+        problems += thr
+    for p in [float(m) for m in _PCT.findall(statement)]:
         if not any(_close(p, v) for v in ok_values):
             problems.append(f"{p:g}% in the statement is not recomputable from cited cells (declare it in derived with a formula)")
-    for r in [float(m) for m in _RATIO.findall(claim.statement)]:
+    for r in [float(m) for m in _RATIO.findall(statement)]:
         if not any(_close(r, v) for v in ok_values):
             problems.append(f"{r:g}x in the statement is not recomputable from cited cells (declare it in derived with a formula)")
     return problems
@@ -366,7 +372,7 @@ def check_causes(text: str, supported_statements: list[str]) -> list[str]:
 
 
 def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "",
-                   dq_notes=(), version: int = CHECKS_VERSION, supported_statements=None) -> list[str]:
+                   dq_notes=(), version: int = CHECKS_VERSION, supported_statements=None, plan_text: str = "") -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -387,7 +393,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
     problems += check_text_numbers("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
                                    evidence, allowed_qids, extra_values, strict_rates=version >= 2,
-                                   day_lists=known_days(evidence, context) if version >= 4 else None)
+                                   day_lists=known_days(evidence, context) if version >= 4 else None,
+                                   plan_pcts=plan_thresholds(plan_text) if version >= 5 else None)
     if version >= 2:
         cmp = check_comparisons_v5 if version >= 5 else check_comparisons
         for i, c in enumerate(ans.claims):
@@ -463,7 +470,7 @@ def known_days(evidence: dict[str, Evidence], context: str = "") -> set[tuple[in
 
 
 def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True,
-                       day_lists: set[tuple[int, int]] | None = None) -> list[str]:
+                       day_lists: set[tuple[int, int]] | None = None, plan_pcts: set[float] | None = None) -> list[str]:
     """Every number written in the final answer (headline, answer, claims, recommendation and caveats) must be backed
     by evidence. A % or Nx must be a derived value of a critic-supported claim (re-evaluated from its formula) or a
     cell of a percentage or ratio column of a query the answer may cite (allowed_qids), never an arbitrary cell that
@@ -484,10 +491,12 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
                         rate_cells.append(abs(n))
     plain_pool = sorted(set(derived + cells))
     rate_pool = sorted(set(derived + rate_cells)) if strict_rates else plain_pool
+    problems = []
+    if plan_pcts:
+        text, problems = plan_threshold_mentions(text, plan_pcts, rate_pool)
     if day_lists is not None:
         text = blank_day_lists(text, day_lists)
     text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
-    problems = []
     for m in _NUM_RE.finditer(text):
         raw, suf = m.group(1), (m.group(2) or "").lower()
         val = float(raw.replace(",", ""))
@@ -1071,3 +1080,63 @@ def check_comparisons_v5(text: str, evidence: dict[str, Evidence], qids: set[str
                         problems.append(f"'{phrase}' does not hold for every compared day: {q}.{col} is {vals[t]:g} vs {v:g} for "
                                         f"{key}. Name the days it holds for, or say 'on average' if it holds against their mean")
     return list(dict.fromkeys(problems))
+
+
+# ---- v5: thresholds the plan set (e.g. 'refute if within 5% of the baseline') -----------------------------------------------
+_THR_OP = re.compile(r"(?:\b(?P<op>within|inside|under|below|less than|fewer than|more than|greater than|over|above|exceed\w*|beyond|"
+                     r"at least|at most|outside)|(?P<sym>[<>≤≥]))\s*(?:the\s+|a\s+|an\s+|its\s+)?(?:plan(?:'s|ned)?\s+)?"
+                     r"(?:materiality\s+|significance\s+)?~?(?:±|\+/-)?$", re.I)
+_THR_NOUN_BEFORE = re.compile(r"\b(?:threshold|margin|band|tolerance|cut-?off)\s+(?:of\s+)?~?(?:±|\+/-)?$", re.I)
+_THR_NOUN_AFTER = re.compile(r"^\s*(?:materiality\s+|significance\s+|noise\s+)?(?:threshold|margin|band|tolerance|cut-?off)\b", re.I)
+_THR_NEG = re.compile(r"\b(?:not|no|never|far from|short of|without)\b[^,;]{0,40}$", re.I)
+_THR_NEG_AFTER = re.compile(r"^[^,;.]{0,40}\b(?:not|never)\b", re.I)
+_THR_LE = {"within", "inside", "under", "below", "less than", "fewer than", "at most", "<", "≤"}
+
+
+def plan_thresholds(plan_text: str) -> set[float]:
+    """The percentages the plan's hypotheses use as decision thresholds (support if / refute if)."""
+    return {float(x) for x in _PCT.findall(plan_text or "")}
+
+
+def plan_threshold_mentions(text: str, plan_pcts: set[float], pool: list[float]) -> tuple[str, list[str]]:
+    """A plan threshold ('within 5% of the baseline', 'the 5% threshold') is a parameter, not a measurement. Named as a
+    threshold ('the 5% threshold') it may be quoted as one. Used as a comparison ('within 5%', 'more than 5%') it needs
+    the measured change it is compared with in the same sentence, backed (in pool), and the comparison must hold
+    ('+0.15%, within the 5% threshold'). Returns the text with every threshold
+    mention blanked (so the number check does not also report it) and a problem for each mention that is not backed
+    that way."""
+    if not plan_pcts:
+        return text, []
+    out, problems, pos = [], [], 0
+    for sent_m in re.finditer(r"(?:[^.!?\n]|\.(?=\d))+(?:[.!?]|$)|[^\n]+", text):
+        sent = sent_m.group(0)
+        mentions, measured = [], []
+        for m in _PCT.finditer(sent):
+            val = abs(float(m.group(1)))
+            before, after = sent[:m.start()], sent[m.end():]
+            op = _THR_OP.search(before)
+            framed = op or _THR_NOUN_BEFORE.search(before) or _THR_NOUN_AFTER.search(after)
+            if framed and any(abs(val - t) < 1e-9 for t in plan_pcts):
+                kind = (op.group("op") or op.group("sym")).lower() if op else ""
+                # 'not a meaningful reduction (>5%)', 'far from the >5% threshold': the comparison is negated
+                neg = bool(op) and bool(_THR_NEG.search(before[:op.start()]) or _THR_NEG_AFTER.search(after))
+                mentions.append((m, val, kind, neg))
+            elif any(abs(val - c) <= max(0.051, 0.005 * val) for c in pool):
+                measured.append(val)
+        for m, val, kind, neg in mentions:
+            if kind:
+                le = (kind in _THR_LE) != neg
+                ok = any((x <= val) if le else (x >= val) for x in measured)
+            else:  # named as a threshold ('the ±5% threshold for fares is analyst-defined'): a parameter, stated as one
+                ok = True
+            if not ok:
+                problems.append(f"'{m.group(0).strip()}' is a threshold from the plan's hypotheses, not a measurement: quote it only in "
+                                f"the same sentence as the measured change it is compared with (e.g. '+0.15%, within the "
+                                f"{val:g}% threshold'), and only when that comparison holds; otherwise state the measured change")
+        s = list(sent)
+        for m, *_ in mentions:
+            s[m.start():m.end()] = " " * (m.end() - m.start())
+        out.append(text[pos:sent_m.start()] + "".join(s))
+        pos = sent_m.end()
+    out.append(text[pos:])
+    return "".join(out), problems

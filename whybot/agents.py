@@ -144,7 +144,8 @@ class Analyst:
 
     SYSTEM_V5 = (" Write each value in its column's unit (see UNITS; trip distances are miles). Call a number an average, mean "
                  "or baseline only when it is one (declare it in derived), never a single day's value. 'Higher/lower than the other "
-                 "days' must hold for every compared day; otherwise say 'on average' or name the days.")
+                 "days' must hold for every compared day; otherwise say 'on average' or name the days. A threshold from the "
+                 "hypotheses (e.g. 5%) is not a measurement: write it only beside the measured change it is compared with.")
 
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
@@ -172,7 +173,7 @@ class Analyst:
             if errs or rounds["n"] >= 3:
                 return errs  # two self-repair rounds; after that the Critic's own number check decides
             for c in cs.claims:
-                ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version)
+                ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version, plan_text=plan_text)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
@@ -244,7 +245,9 @@ class Writer:
     SYSTEM_V5 = (" Write each value in its column's unit (see UNITS; trip distances are miles, never km). Call a number an "
                  "average, mean or baseline only when a supported claim gives it as one, never a single day's value. 'Higher/lower "
                  "than the other (comparison, baseline) days' must hold for every compared day; otherwise write 'on average' or "
-                 "name the days it holds for.")
+                 "name the days it holds for. The hypotheses' thresholds (e.g. 'within 5%') are plan parameters, not "
+                 "measurements: quote one only in the same sentence as the measured change it is compared with "
+                 "('+0.15%, within the 5% threshold'), or leave it out.")
 
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version

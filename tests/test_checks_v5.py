@@ -233,3 +233,69 @@ def test_writer_and_analyst_get_the_v5_wording_rules_only_from_v5():
         llm = FakeLLM({"writer": [_answer("Trips were 90,094.").model_dump()]})
         Writer(llm, v).write("q", "answered", [{"cid": "C1", "cited_values": [{"qid": "Q1"}]}], [], [MONDAYS], [], lambda a: [])
         assert ("must hold for every compared day" in llm.calls[0][1][0]["content"]) is expect
+
+
+# ---- (d) thresholds from the plan ------------------------------------------------------------------------------------------
+from whybot.checks import plan_threshold_mentions, plan_thresholds  # noqa: E402
+
+PLAN = ("H0 [cause] Snow suppressed demand | support if: trips on 2024-12-21 are more than 5% below the other Saturdays' mean | "
+        "refute if: within 5% of the other Saturdays' mean")
+FLAT = Evidence(qid="Q2", hypothesis_id="H0", purpose="p", iteration=1, status="ok", sql_hash="sha256:q2",
+                columns=["trip_date", "trips", "pct_change_vs_baseline"], tables=["whybot.yellow_daily"],
+                rows=[["2024-12-21", 131279, 0.15]])
+FEV = {"Q2": FLAT}
+
+
+def _fans(text):
+    return FinalAnswer(headline="h", answer=text, recommendation="r", confidence=0.9, caveats=[], lessons=[],
+                       claims=[FinalClaim(text="t", citations=[Citation(qid="Q2", sql_hash=FLAT.sql_hash, table=FLAT.tables[0])])])
+
+
+def test_plan_thresholds_are_read_from_the_hypotheses():
+    assert plan_thresholds(PLAN) == {5.0}
+
+
+@pytest.mark.parametrize("text", [
+    "Trips were +0.15% vs the other Saturdays, well within the 5% threshold.",
+    "Trips were +0.15% vs the other Saturdays, inside the ±5% band, so H0 is refuted.",
+    "Trips were +0.15% vs the other Saturdays, not a meaningful reduction (>5%).",
+    "The +0.15% change is small; a reduction of more than 5% was not observed.",
+    "The 5% threshold for a material change is analyst-defined.",              # named as a parameter
+])
+def test_a_plan_threshold_beside_the_measured_change_it_is_compared_with_passes(text):
+    assert plan_threshold_mentions(text, {5.0}, [0.15])[1] == []
+    assert validate_final(_fans(text), FEV, {"Q2"}, [], version=5, plan_text=PLAN) == []
+
+
+@pytest.mark.parametrize("text", [
+    "Trips on 2024-12-21 were within 5% of the other Saturdays.",             # no measured change to compare with
+    "Trips were +0.15% vs the other Saturdays, more than the 5% threshold.",  # the comparison does not hold
+    "Trips fell more than 5% on the snow day.",
+])
+def test_a_plan_threshold_used_as_a_measurement_is_flagged_with_the_reason(text):
+    probs = validate_final(_fans(text), FEV, {"Q2"}, [], version=5, plan_text=PLAN)
+    assert any("threshold from the plan" in p for p in probs), probs
+    assert not any("not backed" in p for p in probs), probs   # one explanation, not two
+
+
+def test_a_percentage_the_plan_did_not_set_is_still_number_checked():
+    probs = validate_final(_fans("Trips were +0.15%, within the 7% threshold."), FEV, {"Q2"}, [], version=5, plan_text=PLAN)
+    assert any("7%" in p for p in probs)
+
+
+def test_plan_thresholds_are_accepted_only_from_v5():
+    text = "Trips were +0.15% vs the other Saturdays, well within the 5% threshold."
+    assert any("5%" in p for p in validate_final(_fans(text), FEV, {"Q2"}, [], version=4, plan_text=PLAN))
+    c = Claim(cid="C1", hypothesis_id="H0", statement=text, direction="refutes",
+              cited_values=[CitedValue(qid="Q2", column="pct_change_vs_baseline", value=0.15, row_hint="trip_date=2024-12-21")])
+    assert any("5%" in p for p in check_claim_numbers(c.model_copy(deep=True), FEV, version=4, plan_text=PLAN).problems)
+    assert not any("5%" in p for p in check_claim_numbers(c.model_copy(deep=True), FEV, version=5, plan_text=PLAN).problems)
+    bad = c.model_copy(update={"statement": "Trips on 2024-12-21 were within 5% of the other Saturdays."}, deep=True)
+    assert any("threshold from the plan" in p for p in check_claim_numbers(bad, FEV, version=5, plan_text=PLAN).problems)
+
+
+def test_writer_is_told_how_to_quote_plan_thresholds_only_from_v5():
+    for v, expect in ((4, False), (5, True)):
+        llm = FakeLLM({"writer": [_answer("Trips were 90,094.").model_dump()]})
+        Writer(llm, v).write("q", "answered", [{"cid": "C1", "cited_values": [{"qid": "Q1"}]}], [], [MONDAYS], [], lambda a: [])
+        assert ("thresholds (e.g. 'within 5%') are plan parameters" in llm.calls[0][1][0]["content"]) is expect
