@@ -23,7 +23,8 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      because it refutes its hypothesis
 #   5: units: a number or unit word must match the unit of its column (TLC distances are miles, never km); the Analyst
 #      and Writer prompts list the column units; a value labelled average/mean/baseline must equal an aggregate of the
-#      cited rows (to its stated precision), not just appear somewhere in them
+#      cited rows (to its stated precision), not just appear somewhere in them; 'higher than the comparison days' must
+#      hold for every compared day (or be worded 'on average' and hold against their mean)
 CHECKS_VERSION = 5
 
 
@@ -123,7 +124,9 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
     corrections: list[str] = []
     problems += check_derived_values(claim, corrections)
     problems += check_weather_wording(claim.statement, evidence, context)
-    if version >= 2:
+    if version >= 5:
+        problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
+    elif version >= 2:
         problems += check_comparisons(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
     if version >= 5:
         qids = {cv.qid for cv in claim.cited_values}
@@ -386,9 +389,10 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                                    evidence, allowed_qids, extra_values, strict_rates=version >= 2,
                                    day_lists=known_days(evidence, context) if version >= 4 else None)
     if version >= 2:
+        cmp = check_comparisons_v5 if version >= 5 else check_comparisons
         for i, c in enumerate(ans.claims):
-            problems += [f"claim {i + 1}: {p}" for p in check_comparisons(c.text, evidence, {x.qid for x in c.citations})]
-        problems += check_comparisons("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
+            problems += [f"claim {i + 1}: {p}" for p in cmp(c.text, evidence, {x.qid for x in c.citations})]
+        problems += cmp("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
     if version >= 5:
         problems += check_units("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
                                 evidence, allowed_qids)
@@ -981,4 +985,89 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
             problems.append(f"'{shown}' is labelled {label.split()[0].lower()!r} but is not the average of the cited rows "
                             f"(a single row's value or a wrong mean){hint}: declare the average in derived with a formula, "
                             f"or drop the label")
+    return list(dict.fromkeys(problems))
+
+
+# ---- v5: comparison scope --------------------------------------------------------------------------------------------------
+_CMP_SET = (r"(?:other|remaining|rest|comparison|baseline|control|reference|prior|previous|preceding|surrounding|normal|typical|usual)\b"
+            r"|(?:\w+\s+){0,2}(?:days|mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays|weekdays|weekends|dates)\b")
+_CMP5 = re.compile(r"\b(?P<dir>higher|greater|more|above|larger|longer|lower|less|fewer|below|smaller|shorter)\b(?P<mid>(?:[^.;]|\.(?=\d)){0,80}?)"
+                   r"\bthan\s+(?:on\s+|for\s+|in\s+|at\s+|during\s+)?(?:(?:all|each|every|any)\s+(?:of\s+)?)?(?:the\s+|those\s+|its\s+)?"
+                   rf"(?P<set>{_CMP_SET})", re.I)
+_ON_AVERAGE = re.compile(r"\bon average\b|\bthan the (?:average|mean)\b|\baverage of the\b|\bmean of the\b", re.I)
+
+
+def _row_date(row):
+    import datetime as _dt
+    for x in row:
+        m = re.match(r"(20\d\d)-(\d\d)-(\d\d)", str(x))
+        if m:
+            try:
+                return _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                return None
+    return None
+
+
+def _compared_rows(rows, t, vals, named_days):
+    """The rows a 'than the comparison days' phrase compares with: the other dates the sentence names, else the rows on
+    the target's weekday (baselines here are like-for-like weekdays), else every other row."""
+    others = [(i, rows[i], v) for i, v in enumerate(vals) if i != t and v is not None]
+    dates = {i: _row_date(rows[i]) for i, _, _ in others}
+    named = [o for o in others if dates[o[0]] and (dates[o[0]].month, dates[o[0]].day) in named_days]
+    if named:
+        return [(r, v) for _, r, v in named]
+    td = _row_date(rows[t])
+    if td:
+        same = [o for o in others if dates[o[0]] and dates[o[0]].weekday() == td.weekday()]
+        if same:
+            return [(r, v) for _, r, v in same]
+    return [(r, v) for _, r, v in others]
+
+
+def check_comparisons_v5(text: str, evidence: dict[str, Evidence], qids: set[str]) -> list[str]:
+    """'X was higher than (on) the comparison Saturdays' must hold for every compared row of the cited column, not just
+    on average: the row holding the stated value must be above every other row (below, for 'lower than'). Wording that
+    says 'on average' (or compares with the mean) is checked against the mean of the other rows instead. The
+    comparison may be split ('higher on the snow day (4.79) than on comparison Saturdays')."""
+    problems = []
+    for sent in _sentences(text):
+        for m in _CMP5.finditer(sent):
+            head = sent[:m.start("mid") + len(m.group("mid"))]
+            if _CMP_NEG.search(sent[:m.start()]):
+                continue
+            on_avg = bool(_ON_AVERAGE.search(sent))
+            nums = [float(x.replace(",", "")) for x, suf in _NUM_RE.findall(_DATE_RE.sub(" ", head)) if not suf]
+            days = month_days(head)
+            up = m.group("dir").lower() in _CMP_UP
+            for q in sorted(qids):
+                ev = evidence.get(q)
+                if not ev or ev.status != "ok" or len(ev.rows) < 2:
+                    continue
+                for ci, col in enumerate(ev.columns):
+                    vals = [_num(r[ci]) for r in ev.rows]
+                    if sum(v is not None for v in vals) < 2:
+                        continue
+                    targets = [i for i, v in enumerate(vals) if v is not None and any(value_matches(n, v) for n in nums)]
+                    if days:
+                        targets = [i for i in targets if any(month_days(str(x)[:10]) & days for x in ev.rows[i])]
+                    if len(targets) != 1:
+                        continue
+                    t = targets[0]
+                    others = _compared_rows(ev.rows, t, vals, month_days(sent) - days)
+                    if not others:
+                        continue
+                    phrase = m.group(0) if len(m.group(0)) < 90 else f"{m.group('dir')} ... than {m.group('set')}"
+                    if on_avg:
+                        mean = sum(v for _, v in others) / len(others)
+                        if (vals[t] <= mean) if up else (vals[t] >= mean):
+                            problems.append(f"'{phrase}' (on average) is contradicted by {q}.{col}: {vals[t]:g} vs the mean "
+                                            f"of the others {mean:g}")
+                        continue
+                    worse = [(row, v) for row, v in others if (v >= vals[t] if up else v <= vals[t])]
+                    if worse:
+                        row, v = worse[0]
+                        key = next((str(x)[:10] for x in row if isinstance(x, str)), "another row")
+                        problems.append(f"'{phrase}' does not hold for every compared day: {q}.{col} is {vals[t]:g} vs {v:g} for "
+                                        f"{key}. Name the days it holds for, or say 'on average' if it holds against their mean")
     return list(dict.fromkeys(problems))

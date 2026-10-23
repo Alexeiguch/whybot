@@ -167,3 +167,69 @@ def test_aggregate_labels_are_checked_in_claims_and_the_answer_only_from_v5():
                       claims=[FinalClaim(text="t", citations=[Citation(qid="Q1", sql_hash="sha256:t", table="whybot.yellow_daily")])])
     assert not any("not the average" in p for p in validate_final(ans, TEV, {"Q1"}, [], version=4))
     assert any("not the average" in p for p in validate_final(ans, TEV, {"Q1"}, [], version=5))
+
+
+# ---- (c) comparison scope ------------------------------------------------------------------------------------------------
+from whybot.checks import check_comparisons, check_comparisons_v5  # noqa: E402
+
+SATURDAYS = Evidence(qid="Q5", hypothesis_id="H2", purpose="p", iteration=1, status="ok", sql_hash="sha256:s",
+                     columns=["trip_date", "trips", "avg_dist"], tables=["whybot.yellow_daily"],
+                     rows=[["2024-12-07", 88213, 3.93], ["2024-12-14", 145707, 4.27], ["2024-12-21", 131279, 4.79],
+                           ["2024-12-28", 159150, 6.33], ["2024-12-23", 120000, 7.10]])  # a Monday: not a compared Saturday
+SEV = {"Q5": SATURDAYS}
+SNOW = ("No US holiday fell on 2024-12-21 or adjacent days, and average trip distance was higher on the snow day (4.79) than "
+        "on comparison Saturdays, contradicting expectations.")   # v4 take-1 #2 answer: 28 Dec was 6.33
+
+
+@pytest.mark.parametrize("text", [
+    SNOW,
+    "Distance on 2024-12-21 (4.79) was higher than the three prior Saturdays.",
+    "Distance on 2024-12-21 (4.79) was longer than baseline Saturdays.",
+    "Trips on 2024-12-21 (131,279) were lower than on the other Saturdays.",   # 7 Dec had 88,213
+])
+def test_a_comparison_that_fails_for_one_compared_day_is_flagged(text):
+    probs = check_comparisons_v5(text, SEV, {"Q5"})
+    assert probs and "every compared day" in probs[0] and "on average" in probs[0], probs
+
+
+def test_v4_missed_the_split_comparison():
+    assert check_comparisons(SNOW, SEV, {"Q5"}) == []
+
+
+@pytest.mark.parametrize("text", [
+    "avg_dist on 2024-12-21 (4.79) was higher than on 2024-12-07 (3.93) and 2024-12-14 (4.27).",   # names the days it holds for
+    "Trips on 2024-12-28 (159,150) were higher than on the other three Saturdays.",
+    "On average, distance on 2024-12-21 (4.79) was lower than on the other Saturdays.",            # mean of the Saturdays 4.84
+    "Distance on 2024-12-21 (4.79) was not higher than the other Saturdays.",
+    "Trips on 2024-12-21 (131,279) were within 5% of the other Saturdays.",
+])
+def test_comparisons_that_hold_pass(text):
+    assert check_comparisons_v5(text, SEV, {"Q5"}) == []
+
+
+def test_on_average_wording_is_checked_against_the_mean():
+    probs = check_comparisons_v5("On average, distance on 2024-12-21 (4.79) was higher than on the other Saturdays.", SEV, {"Q5"})
+    assert probs and "mean of the others" in probs[0]
+
+
+def test_only_the_same_weekday_rows_are_compared():
+    # the Monday 23 Dec (7.10) is in the result but is not a compared Saturday
+    assert check_comparisons_v5("Distance on 2024-12-28 (6.33) was longer than the other Saturdays.", SEV, {"Q5"}) == []
+
+
+def test_comparison_scope_is_checked_in_claims_and_the_answer_only_from_v5():
+    c = Claim(cid="C1", hypothesis_id="H2", statement=SNOW, direction="refutes",
+              cited_values=[CitedValue(qid="Q5", column="avg_dist", value=4.79, row_hint="trip_date=2024-12-21")])
+    assert not any("every compared day" in p for p in check_claim_numbers(c.model_copy(deep=True), SEV, version=4).problems)
+    assert any("every compared day" in p for p in check_claim_numbers(c.model_copy(deep=True), SEV, version=5).problems)
+    ans = FinalAnswer(headline="h", answer=SNOW, recommendation="r", confidence=0.9,
+                      claims=[FinalClaim(text="t", citations=[Citation(qid="Q5", sql_hash="sha256:s", table="whybot.yellow_daily")])])
+    assert not any("every compared day" in p for p in validate_final(ans, SEV, {"Q5"}, [], version=4))
+    assert any("every compared day" in p for p in validate_final(ans, SEV, {"Q5"}, [], version=5))
+
+
+def test_writer_and_analyst_get_the_v5_wording_rules_only_from_v5():
+    for v, expect in ((4, False), (5, True)):
+        llm = FakeLLM({"writer": [_answer("Trips were 90,094.").model_dump()]})
+        Writer(llm, v).write("q", "answered", [{"cid": "C1", "cited_values": [{"qid": "Q1"}]}], [], [MONDAYS], [], lambda a: [])
+        assert ("must hold for every compared day" in llm.calls[0][1][0]["content"]) is expect

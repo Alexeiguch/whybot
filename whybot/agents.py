@@ -142,6 +142,10 @@ class Analyst:
         "and if the change is small (under about 5%) or opposite to the question, add a claim saying the premise is not supported by the data."
     )
 
+    SYSTEM_V5 = (" Write each value in its column's unit (see UNITS; trip distances are miles). Call a number an average, mean "
+                 "or baseline only when it is one (declare it in derived), never a single day's value. 'Higher/lower than the other "
+                 "days' must hold for every compared day; otherwise say 'on average' or name the days.")
+
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
 
@@ -172,7 +176,8 @@ class Analyst:
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
-        return self.llm.complete_json("analyst", self.SYSTEM, user, ClaimSet, validator=validate, max_tokens=5000)
+        system = self.SYSTEM + (self.SYSTEM_V5 if self.version >= 5 else "")
+        return self.llm.complete_json("analyst", system, user, ClaimSet, validator=validate, max_tokens=5000)
 
 
 class Critic:
@@ -236,6 +241,11 @@ class Writer:
         "supported claim; do not compute new percentages."
     )
 
+    SYSTEM_V5 = (" Write each value in its column's unit (see UNITS; trip distances are miles, never km). Call a number an "
+                 "average, mean or baseline only when a supported claim gives it as one, never a single day's value. 'Higher/lower "
+                 "than the other (comparison, baseline) days' must hold for every compared day; otherwise write 'on average' or "
+                 "name the days it holds for.")
+
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
 
@@ -251,4 +261,5 @@ class Writer:
             user += "\n\nThe investigation was escalated: say clearly that the evidence is insufficient, what was ruled out, and what data would settle it."
         if self.version >= 5:
             user += "\n\n" + units_text([e for e in evidence if e.qid in citable])
-        return self.llm.complete_json("writer", self.SYSTEM, user, FinalAnswer, validator=validator, max_tokens=2500)
+        system = self.SYSTEM + (self.SYSTEM_V5 if self.version >= 5 else "")
+        return self.llm.complete_json("writer", system, user, FinalAnswer, validator=validator, max_tokens=2500)
