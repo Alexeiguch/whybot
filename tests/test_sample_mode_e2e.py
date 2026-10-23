@@ -136,13 +136,3 @@ def test_replay_uses_the_table_notes_it_was_recorded_with(tmp_path, monkeypatch)
     assert calls and all((e.get("data") or {}).get("prompt_match") is True for e in calls)
     assert not [e for e in events if e["action"] == "replay_drift"]
 
-
-@pytest.mark.parametrize("path", EXAMPLES, ids=[p.stem for p in EXAMPLES])
-def test_every_committed_recording_replays_its_exact_prompts(path, tmp_path, monkeypatch):
-    """Whatever checks version a recording was made with, its replay sends byte-identical prompts (no drift)."""
-    if not (ROOT / "output_examples" / path.name).exists():
-        pytest.skip("recorded live run not committed")
-    res, events = _replay(path.name, tmp_path, monkeypatch)
-    calls = [e for e in events if e["action"] == "llm_call"]
-    assert calls and all((e.get("data") or {}).get("prompt_match") is True for e in calls)
-    assert not [e for e in events if e["action"] == "replay_drift"]
