@@ -16,7 +16,17 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      other three Mondays" are checked against the cited rows
 #   3: every cause the headline or answer names (holiday, weather, trip mix, ...) needs a critic-supported claim
 #      about that cause, or the wording must hedge it
-CHECKS_VERSION = 3
+#   4: bare day-of-month numbers that continue a date list ("2024-11-07, 14, 21", "7, 14 and 21 Dec") are dates when each
+#      such date appears in the evidence or the question; the SQL agent sees the exact allowlisted table names, a close
+#      miss (whybot.date_dim) is repaired to the one allowlisted table it can only mean, and d_dow = 7 is refused
+#      (TPCDS d_dow is 0=Sunday..6=Saturday); the Critic may not mark a claim that matches its rows unsupported only
+#      because it refutes its hypothesis
+#   5: units: a number or unit word must match the unit of its column (TLC distances are miles, never km); the Analyst
+#      and Writer prompts list the column units; a value labelled average/mean/baseline must equal an aggregate of the
+#      cited rows (to its stated precision), not just appear somewhere in them; 'higher than the comparison days' must
+#      hold for every compared day (or be worded 'on average' and hold against their mean); a threshold % from the plan's
+#      hypotheses ('within 5%') may be quoted only beside the backed, measured change it is compared with
+CHECKS_VERSION = 5
 
 
 def _num(v):
@@ -74,7 +84,8 @@ class NumericCheck:
     corrections: list[str] = field(default_factory=list)
 
 
-def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "", version: int = CHECKS_VERSION) -> NumericCheck:
+def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "", version: int = CHECKS_VERSION,
+                        plan_text: str = "") -> NumericCheck:
     """Every cited value must appear in the named column of the named, successful query result, and benign weather
     wording must not describe a day the weather evidence shows as wet or snowy. ('No data-quality flags' is checked on
     the final answer, where the run's data-quality caveat is rendered.)"""
@@ -113,10 +124,16 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
         if not any(value_matches(cv.value, r[idx]) for r in rows):
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
     corrections: list[str] = []
-    problems += check_derived_values(claim, corrections)
+    problems += check_derived_values(claim, corrections, plan_thresholds(plan_text) if version >= 5 else None)
     problems += check_weather_wording(claim.statement, evidence, context)
-    if version >= 2:
+    if version >= 5:
+        problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
+    elif version >= 2:
         problems += check_comparisons(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
+    if version >= 5:
+        qids = {cv.qid for cv in claim.cited_values}
+        problems += check_units(claim.statement, evidence, qids)
+        problems += check_aggregate_labels(claim.statement, evidence, qids, [d.value for d in claim.derived])
     return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
@@ -199,7 +216,7 @@ def check_direction(claim: Claim) -> list[str]:
     return []
 
 
-def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> list[str]:
+def check_derived_values(claim: Claim, corrections: list[str] | None = None, plan_pcts: set[float] | None = None) -> list[str]:
     """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
     recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
     the model's. Values further off are rejected. Every % or Nx ratio in the statement must then be one of the
@@ -238,10 +255,14 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None) -> 
     problems += check_direction(claim)
     for left in re.findall(r"\{[A-Za-z_]\w*\}", claim.statement):
         problems.append(f"placeholder {left} has no derived value with that name")
-    for p in [float(m) for m in _PCT.findall(claim.statement)]:
+    statement = claim.statement
+    if plan_pcts:  # v5: a plan threshold next to the measured change it is compared with is not a measurement
+        statement, thr = plan_threshold_mentions(statement, plan_pcts, ok_values)
+        problems += thr
+    for p in [float(m) for m in _PCT.findall(statement)]:
         if not any(_close(p, v) for v in ok_values):
             problems.append(f"{p:g}% in the statement is not recomputable from cited cells (declare it in derived with a formula)")
-    for r in [float(m) for m in _RATIO.findall(claim.statement)]:
+    for r in [float(m) for m in _RATIO.findall(statement)]:
         if not any(_close(r, v) for v in ok_values):
             problems.append(f"{r:g}x in the statement is not recomputable from cited cells (declare it in derived with a formula)")
     return problems
@@ -351,7 +372,7 @@ def check_causes(text: str, supported_statements: list[str]) -> list[str]:
 
 
 def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), context: str = "",
-                   dq_notes=(), version: int = CHECKS_VERSION, supported_statements=None) -> list[str]:
+                   dq_notes=(), version: int = CHECKS_VERSION, supported_statements=None, plan_text: str = "") -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
     if not ans.claims:
@@ -371,11 +392,19 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
             if cit.table.lower() not in [t.lower() for t in ev.tables]:
                 problems.append(f"claim {i + 1}: table for {cit.qid} must be one of {ev.tables}")
     problems += check_text_numbers("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
-                                   evidence, allowed_qids, extra_values, strict_rates=version >= 2)
+                                   evidence, allowed_qids, extra_values, strict_rates=version >= 2,
+                                   day_lists=known_days(evidence, context) if version >= 4 else None,
+                                   plan_pcts=plan_thresholds(plan_text) if version >= 5 else None)
     if version >= 2:
+        cmp = check_comparisons_v5 if version >= 5 else check_comparisons
         for i, c in enumerate(ans.claims):
-            problems += [f"claim {i + 1}: {p}" for p in check_comparisons(c.text, evidence, {x.qid for x in c.citations})]
-        problems += check_comparisons("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
+            problems += [f"claim {i + 1}: {p}" for p in cmp(c.text, evidence, {x.qid for x in c.citations})]
+        problems += cmp("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
+    if version >= 5:
+        problems += check_units("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
+                                evidence, allowed_qids)
+        problems += check_aggregate_labels("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation]),
+                                           evidence, allowed_qids, extra_values)
     if version >= 3 and supported_statements is not None:
         problems += check_causes(ans.headline + ".\n" + ans.answer, list(supported_statements))
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
@@ -397,7 +426,51 @@ _DAY_LIST = re.compile(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a
 _TOLERANCE = re.compile(r"(?:±|\+/-)\s?\d+(?:\.\d+)?\s?%")
 
 
-def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True) -> list[str]:
+_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+_LIST_SEP = r"\s*(?:,\s*(?:and\s+|&\s*)?|and\s+|&\s*)"
+_DAY = r"\d{1,2}(?:st|nd|rd|th)?"
+# "2024-11-07, 14, 21" / "Nov 7, 14 and 21": an anchor date followed by more days of the same month
+_DAYS_AFTER = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_MONTH})\s+{_DAY}\b)(?P<rest>(?:{_LIST_SEP}{_DAY}\b(?![-./]\d|\s*(?:%|x\b|k\b|{_MONTH})))+)", re.I)
+# "7, 14 and 21 Dec": days of the month listed before the month that ends the list
+_DAYS_BEFORE = re.compile(rf"(?P<rest>\b(?:{_DAY}{_LIST_SEP})+){_DAY}\s+(?P<m>{_MONTH})", re.I)
+
+
+def blank_day_lists(text: str, known_days: set[tuple[int, int]]) -> str:
+    """Blank the bare day numbers of a date list when every date they form is known (in a query result, a note or the
+    question). A list with any unknown date is left alone, so its numbers are still checked as figures."""
+    def days_of(rest: str) -> list[int]:
+        return [int(d) for d in re.findall(r"\d{1,2}", rest)]
+
+    def ok(month: int, days: list[int]) -> bool:
+        return bool(days) and all((month, d) in known_days for d in days)
+
+    def after(m):
+        month = int(m.group("m1")) if m.group("m1") else _MON[m.group("m2").lower()[:3]]
+        if ok(month, days_of(m.group("rest"))):
+            return m.group("anchor") + " " * len(m.group("rest"))
+        return m.group(0)
+
+    def before(m):
+        month = _MON[m.group("m").lower()[:3]]
+        if ok(month, days_of(m.group("rest"))):
+            return " " * len(m.group("rest")) + m.group(0)[len(m.group("rest")):]
+        return m.group(0)
+
+    return _DAYS_BEFORE.sub(before, _DAYS_AFTER.sub(after, text))
+
+
+def known_days(evidence: dict[str, Evidence], context: str = "") -> set[tuple[int, int]]:
+    out = month_days(context)
+    for ev in evidence.values():
+        if ev and ev.status == "ok":
+            for r in ev.rows:
+                for v in r:
+                    out |= month_days(str(v))
+    return out
+
+
+def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True,
+                       day_lists: set[tuple[int, int]] | None = None, plan_pcts: set[float] | None = None) -> list[str]:
     """Every number written in the final answer (headline, answer, claims, recommendation and caveats) must be backed
     by evidence. A % or Nx must be a derived value of a critic-supported claim (re-evaluated from its formula) or a
     cell of a percentage or ratio column of a query the answer may cite (allowed_qids), never an arbitrary cell that
@@ -418,8 +491,12 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
                         rate_cells.append(abs(n))
     plain_pool = sorted(set(derived + cells))
     rate_pool = sorted(set(derived + rate_cells)) if strict_rates else plain_pool
-    text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
     problems = []
+    if plan_pcts:
+        text, problems = plan_threshold_mentions(text, plan_pcts, rate_pool)
+    if day_lists is not None:
+        text = blank_day_lists(text, day_lists)
+    text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
     for m in _NUM_RE.finditer(text):
         raw, suf = m.group(1), (m.group(2) or "").lower()
         val = float(raw.replace(",", ""))
@@ -681,3 +758,385 @@ def result_sanity(columns: list[str], rows: list[list]) -> list[str]:
             problems.append("every row has identical values in all non-key columns although the keys differ: "
                             "likely a cross join or a missing join/group key; join explicitly on the date key")
     return problems
+
+
+# ---- v4: SQL-side checks before a query runs --------------------------------------------------------------------------
+_DOW7 = re.compile(r"\bd_dow\s*(?:=|==|>=|<=|<>|!=)\s*'?7\b|\bd_dow\s+(?:not\s+)?in\s*\([^)]*\b7\b[^)]*\)", re.I)
+
+
+def check_calendar_sql(sql: str) -> list[str]:
+    """TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday (unlike Spark dayofweek(), 1=Sunday..7=Saturday), so d_dow = 7
+    never matches a row: an empty result that looks like evidence of absence."""
+    s = re.sub(r"'(?:[^']|'')*'", lambda m: m.group(0) if m.group(0) in ("'7'", "'6'") else "''", sql)
+    if _DOW7.search(s):
+        return ["TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday (Saturday is 6, not 7; Spark dayofweek() is the one that "
+                "uses 1..7): fix the d_dow filter or use d_day_name = 'Saturday'"]
+    return []
+
+
+def repair_table_names(sql: str, allowed: list[str]) -> tuple[str, list[str]]:
+    """Rewrite a table reference that is not allowlisted to the ONE allowlisted table it can only mean: the same table
+    name under a wrong or extra prefix (whybot.date_dim, whybot.tpcds_db.date_dim -> TPCDS_DB.date_dim). Ambiguous or
+    unknown names are left as they are, so the allowlist still fails closed. Returns (sql, ["old -> new", ...])."""
+    from .datasource.base import DataSourceError, referenced_tables
+    try:
+        refs = referenced_tables(sql)
+    except DataSourceError:
+        return sql, []
+    low = {t.lower(): t for t in allowed}
+    repairs = []
+    for ref in sorted(refs):
+        if ref in low:
+            continue
+        parts = ref.split(".")
+        cands = {t for lt, t in low.items() if ref.endswith("." + lt)} or {t for lt, t in low.items() if lt.split(".")[-1] == parts[-1]}
+        if len(cands) != 1:
+            continue
+        new = cands.pop()
+        pat = re.compile(r"(?<![\w.`])" + r"\.".join(rf"`?{re.escape(p)}`?" for p in parts) + r"(?![\w`])", re.I)
+        sql2, n = pat.subn(new, sql)
+        if n:
+            sql = sql2
+            repairs.append(f"{ref} -> {new}")
+    return sql, repairs
+
+
+_HYP_DIRECTION = re.compile(
+    r"\b(?:hypothes[ie]s|H\d+)\b[^.;]{0,40}?\b(?:expects?|expected|predicts?|predicted|anticipat\w+|assum\w+|requires?|implies|implied)\b"
+    r"|\bdirection of the hypothes[ie]s\b|\b(?:does not|doesn't|fails? to) (?:support|match|fit) (?:the |its )?hypothes[ie]s\b", re.I)
+
+
+def check_critic_verdicts(report: CriticReport, checks: dict[str, NumericCheck]) -> list[str]:
+    """A claim whose numbers pass the automated check is evidence even when it refutes its hypothesis. A verdict of
+    unsupported (or weak) that rests on the hypothesis' expected direction, not on the rows, is sent back."""
+    problems = []
+    for v in report.verdicts:
+        ch = checks.get(v.cid)
+        if ch is None or not ch.ok or v.verdict == "supported":
+            continue
+        if _HYP_DIRECTION.search(v.reason or ""):
+            problems.append(f"{v.cid}: judge the claim against the returned rows, not against what its hypothesis expected. Its numbers "
+                            f"pass the automated check; if the statement says what the rows say, mark the claim supported and set the "
+                            f"hypothesis to refuted (a claim that refutes a hypothesis is valid evidence). Mark it weak or unsupported "
+                            f"only for a problem with the claim itself (wording, baseline, confounders)")
+    return problems
+
+
+# ---- v5: units -------------------------------------------------------------------------------------------------------
+# The unit of a result column, from its name. TLC trip_distance is miles; NOAA prcp/snow are mm, tmax/tmin deg C.
+def column_unit(col: str) -> str | None:
+    c = col.lower()
+    if re.search(r"(?:^|_)km(?:_|$)|kilomet", c):
+        return "km"
+    if "distance" in c or re.search(r"(?:^|_)(?:mi|miles)(?:_|$)", c):
+        return "mi"
+    if re.search(r"(?:^|_)mm(?:_|$)", c) or c in ("prcp", "snow", "snwd") or "precip" in c:
+        return "mm"
+    if re.search(r"(?:^|_)f$", c) and re.search(r"temp|tmax|tmin", c):
+        return "F"
+    if re.search(r"(?:^|_)c$", c) and re.search(r"temp|tmax|tmin", c) or c in ("tmax", "tmin"):
+        return "C"
+    if re.search(r"amount|fare|tip|toll|price|revenue|usd", c):
+        return "USD"
+    return None
+
+
+UNIT_LABEL = {"mi": "miles", "km": "km", "mm": "mm", "C": "deg C", "F": "deg F", "USD": "USD"}
+_UNIT_DIM = {"mi": "length", "km": "length", "mm": "depth", "cm": "depth", "in": "depth", "C": "temp", "F": "temp",
+             "USD": "money", "EUR": "money", "GBP": "money"}
+_UNIT_WORDS = [
+    ("km", r"\bkms?\b|\bkilomet(?:er|re)s?\b"),
+    ("mi", r"\bmiles?\b|\bmi\b"),
+    ("mm", r"\bmm\b|\bmillimet(?:er|re)s?\b"),
+    ("cm", r"\bcm\b|\bcentimet(?:er|re)s?\b"),
+    ("in", r"\binch(?:es)?\b"),
+    ("C", r"°\s?C\b|\bdeg(?:rees?)?\s?C\b|\bdegrees? Celsius\b|\bCelsius\b"),
+    ("F", r"°\s?F\b|\bdeg(?:rees?)?\s?F\b|\bdegrees? Fahrenheit\b|\bFahrenheit\b"),
+    ("USD", r"\bUSD\b|\bUS\$|\bdollars?\b"),
+    ("EUR", r"€|\bEUR\b|\beuros?\b"),
+    ("GBP", r"£|\bGBP\b"),
+]
+_UNIT_ALT = "|".join(f"(?P<u_{k}>{p})" for k, p in _UNIT_WORDS)
+_NUM_UNIT = re.compile(rf"(?<![\w.])~?(?P<n>[-+]?(?:\d{{1,3}}(?:,\d{{3}})+(?:\.\d+)?|\d+(?:\.\d+)?))\s?(?:{_UNIT_ALT})", re.I)
+_DOLLAR_NUM = re.compile(r"(?<![\w$])\$\s?(?P<n>\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)")
+_UNIT_ANY = re.compile(_UNIT_ALT, re.I)
+
+
+def _unit_of(m) -> str:
+    return next(k for k, _ in _UNIT_WORDS if m.group(f"u_{k}"))
+
+
+def units_text(evidence) -> str:
+    """The units of the returned columns, for the Analyst and Writer prompts (v5)."""
+    by_unit: dict[str, list[str]] = {}
+    for ev in (evidence.values() if isinstance(evidence, dict) else evidence):
+        if ev and ev.status == "ok":
+            for c in ev.columns:
+                u = column_unit(c)
+                if u and c not in by_unit.setdefault(u, []):
+                    by_unit[u].append(c)
+    if not by_unit:
+        return ""
+    parts = [f"{', '.join(cols)} = {UNIT_LABEL[u]}" + (" (TLC distances are miles: never write km)" if u == "mi" else "")
+             for u, cols in by_unit.items()]
+    return "UNITS: " + "; ".join(parts) + "."
+
+
+def check_units(text: str, evidence: dict[str, Evidence], qids: set[str]) -> list[str]:
+    """A number written with a unit must carry the unit of the column it comes from ('4.79 km' when avg_trip_distance is
+    miles; '9.4 mm' when 9.4 is tmax_c). A unit word of a dimension the cited columns measure in another unit ('4.40-5.53
+    km' with distances in miles) is flagged too. Numbers that are not cells of a column with a known unit are left to the
+    number check."""
+    cols = []  # (qid, column, unit, values)
+    for q in sorted(qids):
+        ev = evidence.get(q)
+        if not ev or ev.status != "ok":
+            continue
+        for i, c in enumerate(ev.columns):
+            u = column_unit(c)
+            cols.append((q, c, u, [r[i] for r in ev.rows]))
+    problems, flagged = [], set()
+    text = _DATE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    found = [(m.group("n"), _unit_of(m), m.group(0).strip()) for m in _NUM_UNIT.finditer(text)]
+    found += [(m.group("n"), "USD", m.group(0).strip()) for m in _DOLLAR_NUM.finditer(text)]
+    for n, unit, shown in found:
+        hits = [(q, c, u) for q, c, u, vals in cols if any(_num(v) is not None and value_matches(n, v) for v in vals)]
+        if not hits or any(u is None for _, _, u in hits) or any(u == unit for _, _, u in hits):
+            continue
+        q, c, u = hits[0]
+        flagged.add(unit)
+        problems.append(f"'{shown}': {n} is {q}.{c}, which is in {UNIT_LABEL[u]}, not {unit}")
+    known = {u for _, _, u, _ in cols if u}
+    for m in _UNIT_ANY.finditer(text):
+        unit = _unit_of(m)
+        same_dim = sorted(u for u in known if _UNIT_DIM.get(u) == _UNIT_DIM.get(unit))
+        if same_dim and unit not in same_dim and unit not in flagged:
+            flagged.add(unit)
+            c = next(c for _, c, u, _ in cols if u in same_dim)
+            problems.append(f"the answer writes {m.group(0).strip()!r} but {c} is in {UNIT_LABEL[same_dim[0]]}")
+    return list(dict.fromkeys(problems))
+
+
+# ---- v5: a value labelled average / mean / baseline must be that aggregate ------------------------------------------------
+_AGG_WORD = r"baseline|mean|average|averag(?:ed|es|ing)|avg|typical"
+_CROSS_ROW = re.compile(r"baseline|typical|mean\s+of|average\s+of|averag(?:ed|es|ing)\b", re.I)
+_AGG_STOP = (r"(?:to|vs|versus|than|compared|while|whereas|but|and|from|against|on|for|in|range|between|min\w*|max\w*|low\w*|high\w*|"
+             r"each|individual|single|rows?|dates?|days?|weeks?|\w+days?|weekends?|values?|cells?|counts?|figures?|numbers?|levels?|readings?)\b")
+_AGG_BEFORE = re.compile(rf"\b(?P<w>{_AGG_WORD})\b(?P<gap>(?:\W+(?!\d|{_AGG_STOP})\w+){{0,3}})[^\w]*~?\$?$", re.I)
+_AGG_AFTER = re.compile(rf"^\s?(?:{_UNIT_ALT})?\s*(?P<w>{_AGG_WORD})\b", re.I)
+_AGG_COL = re.compile(r"baseline|mean|avg|average|typical", re.I)
+_PERROW_COL = re.compile(r"^avg_|_avg$|^mean_", re.I)
+
+
+def _stated_tolerance(raw: str, suffix: str) -> float:
+    """Half a unit of the last stated digit: 141,642 -> 0.5; 4.3 -> 0.05; 141,600 -> 50; 141.6k -> 50."""
+    s = raw.replace(",", "")
+    if "." in s:
+        t = 0.5 * 10 ** -len(s.split(".")[1])
+    else:
+        z = len(s) - len(s.rstrip("0")) if len(s) >= 4 else 0
+        t = 0.5 * 10 ** z
+    return t * 1000 if suffix == "k" else t
+
+
+def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[str], derived=()) -> list[str]:
+    """A number labelled average, mean or baseline ('baseline average of 141,642', '~4.3 miles baseline') must equal, to its
+    stated precision, an aggregate of the cited rows: the mean of a numeric column over all rows or all rows but one (the
+    target day), a verified derived value, or the single value of a column that is itself an aggregate (a one-value
+    baseline_avg_trips; for a plain 'average' also a per-row avg_ column). Appearing somewhere in the results is not enough: 141,642 is one
+    Thursday's count, not the mean of the three."""
+    aggs, agg_cells, perrow_cells = [abs(float(d)) for d in derived if d is not None], [], []
+    for q in sorted(qids):
+        ev = evidence.get(q)
+        if not ev or ev.status != "ok":
+            continue
+        for i, c in enumerate(ev.columns):
+            vals = [_num(r[i]) for r in ev.rows]
+            vals = [v for v in vals if v is not None]
+            if not vals:
+                continue
+            # an aggregate-named column is an aggregate only when it holds one value; per-day values in a column the SQL
+            # agent named baseline_avg_trips are still single days
+            if _AGG_COL.search(c) and not _PERROW_COL.search(c) and len(set(vals)) == 1:
+                agg_cells += vals
+            elif _AGG_COL.search(c):
+                perrow_cells += vals
+            if len(vals) >= 2:
+                aggs.append(sum(vals) / len(vals))
+                if len(vals) >= 3:
+                    aggs += [(sum(vals) - v) / (len(vals) - 1) for v in vals]
+    blanked = _DATE_RE.sub(lambda m: " " * len(m.group(0)), text)
+    problems = []
+    for sent_m in re.finditer(r"[^.;!?\n]+(?:[.;!?](?!\d)|$)|[^\n]+", blanked):
+        sent, base = sent_m.group(0), sent_m.start()
+        prev_end = 0
+        for m in _NUM_RE.finditer(sent):
+            raw, suf = m.group(1), (m.group(2) or "").lower()
+            before, after = sent[prev_end:m.start()], sent[m.end():]
+            prev_end = m.end()
+            if suf in ("%", "x", "\u00d7"):
+                continue
+            lab = _AGG_BEFORE.search(before)
+            lab_a = _AGG_AFTER.search(after)
+            if not lab and not lab_a or re.match(r"\s?(?:[A-Za-z]+\s?)?,\s*[-+~$]?\d", after):
+                continue  # no label, or the first value of a list ('baseline: 80127, 100492, 93060')
+            label = ((lab.group(0) if lab else "") + " " + (lab_a.group("w") if lab_a else "")).strip()
+            val = abs(float(raw.replace(",", ""))) * (1000 if suf == "k" else 1)
+            if "." not in raw and val <= 12 and not suf:
+                continue
+            tol = _stated_tolerance(raw, suf) + 1e-9
+            pool = aggs + agg_cells + ([] if _CROSS_ROW.search(label) else perrow_cells)
+            if any(abs(val - a) <= tol for a in pool):
+                continue
+            near = min(aggs, key=lambda a: abs(a - val), default=None)
+            hint = f"; the nearest aggregate of the cited rows is {near:,.2f}" if near is not None else ""
+            shown = text[base + m.start():base + m.end()].strip()
+            problems.append(f"'{shown}' is labelled {label.split()[0].lower()!r} but is not the average of the cited rows "
+                            f"(a single row's value or a wrong mean){hint}: declare the average in derived with a formula, "
+                            f"or drop the label")
+    return list(dict.fromkeys(problems))
+
+
+# ---- v5: comparison scope --------------------------------------------------------------------------------------------------
+_CMP_SET = (r"(?:other|remaining|rest|comparison|baseline|control|reference|prior|previous|preceding|surrounding|normal|typical|usual)\b"
+            r"|(?:\w+\s+){0,2}(?:days|mondays|tuesdays|wednesdays|thursdays|fridays|saturdays|sundays|weekdays|weekends|dates)\b")
+_CMP5 = re.compile(r"\b(?P<dir>higher|greater|more|above|larger|longer|lower|less|fewer|below|smaller|shorter)\b(?P<mid>(?:[^.;]|\.(?=\d)){0,80}?)"
+                   r"\bthan\s+(?:on\s+|for\s+|in\s+|at\s+|during\s+)?(?:(?:all|each|every|any)\s+(?:of\s+)?)?(?:the\s+|those\s+|its\s+)?"
+                   rf"(?P<set>{_CMP_SET})", re.I)
+_ON_AVERAGE = re.compile(r"\bon average\b|\bthan the (?:average|mean)\b|\baverage of the\b|\bmean of the\b", re.I)
+
+
+def _row_date(row):
+    import datetime as _dt
+    for x in row:
+        m = re.match(r"(20\d\d)-(\d\d)-(\d\d)", str(x))
+        if m:
+            try:
+                return _dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            except ValueError:
+                return None
+    return None
+
+
+def _compared_rows(rows, t, vals, named_days):
+    """The rows a 'than the comparison days' phrase compares with: the other dates the sentence names, else the rows on
+    the target's weekday (baselines here are like-for-like weekdays), else every other row."""
+    others = [(i, rows[i], v) for i, v in enumerate(vals) if i != t and v is not None]
+    dates = {i: _row_date(rows[i]) for i, _, _ in others}
+    named = [o for o in others if dates[o[0]] and (dates[o[0]].month, dates[o[0]].day) in named_days]
+    if named:
+        return [(r, v) for _, r, v in named]
+    td = _row_date(rows[t])
+    if td:
+        same = [o for o in others if dates[o[0]] and dates[o[0]].weekday() == td.weekday()]
+        if same:
+            return [(r, v) for _, r, v in same]
+    return [(r, v) for _, r, v in others]
+
+
+def check_comparisons_v5(text: str, evidence: dict[str, Evidence], qids: set[str]) -> list[str]:
+    """'X was higher than (on) the comparison Saturdays' must hold for every compared row of the cited column, not just
+    on average: the row holding the stated value must be above every other row (below, for 'lower than'). Wording that
+    says 'on average' (or compares with the mean) is checked against the mean of the other rows instead. The
+    comparison may be split ('higher on the snow day (4.79) than on comparison Saturdays')."""
+    problems = []
+    for sent in _sentences(text):
+        for m in _CMP5.finditer(sent):
+            head = sent[:m.start("mid") + len(m.group("mid"))]
+            if _CMP_NEG.search(sent[:m.start()]):
+                continue
+            on_avg = bool(_ON_AVERAGE.search(sent))
+            nums = [float(x.replace(",", "")) for x, suf in _NUM_RE.findall(_DATE_RE.sub(" ", head)) if not suf]
+            days = month_days(head)
+            up = m.group("dir").lower() in _CMP_UP
+            for q in sorted(qids):
+                ev = evidence.get(q)
+                if not ev or ev.status != "ok" or len(ev.rows) < 2:
+                    continue
+                for ci, col in enumerate(ev.columns):
+                    vals = [_num(r[ci]) for r in ev.rows]
+                    if sum(v is not None for v in vals) < 2:
+                        continue
+                    targets = [i for i, v in enumerate(vals) if v is not None and any(value_matches(n, v) for n in nums)]
+                    if days:
+                        targets = [i for i in targets if any(month_days(str(x)[:10]) & days for x in ev.rows[i])]
+                    if len(targets) != 1:
+                        continue
+                    t = targets[0]
+                    others = _compared_rows(ev.rows, t, vals, month_days(sent) - days)
+                    if not others:
+                        continue
+                    phrase = m.group(0) if len(m.group(0)) < 90 else f"{m.group('dir')} ... than {m.group('set')}"
+                    if on_avg:
+                        mean = sum(v for _, v in others) / len(others)
+                        if (vals[t] <= mean) if up else (vals[t] >= mean):
+                            problems.append(f"'{phrase}' (on average) is contradicted by {q}.{col}: {vals[t]:g} vs the mean "
+                                            f"of the others {mean:g}")
+                        continue
+                    worse = [(row, v) for row, v in others if (v >= vals[t] if up else v <= vals[t])]
+                    if worse:
+                        row, v = worse[0]
+                        key = next((str(x)[:10] for x in row if isinstance(x, str)), "another row")
+                        problems.append(f"'{phrase}' does not hold for every compared day: {q}.{col} is {vals[t]:g} vs {v:g} for "
+                                        f"{key}. Name the days it holds for, or say 'on average' if it holds against their mean")
+    return list(dict.fromkeys(problems))
+
+
+# ---- v5: thresholds the plan set (e.g. 'refute if within 5% of the baseline') -----------------------------------------------
+_THR_OP = re.compile(r"(?:\b(?P<op>within|inside|under|below|less than|fewer than|more than|greater than|over|above|exceed\w*|beyond|"
+                     r"at least|at most|outside)|(?P<sym>[<>≤≥]))\s*(?:the\s+|a\s+|an\s+|its\s+)?(?:plan(?:'s|ned)?\s+)?"
+                     r"(?:materiality\s+|significance\s+)?~?(?:±|\+/-)?$", re.I)
+_THR_NOUN_BEFORE = re.compile(r"\b(?:threshold|margin|band|tolerance|cut-?off)\s+(?:of\s+)?~?(?:±|\+/-)?$", re.I)
+_THR_NOUN_AFTER = re.compile(r"^\s*(?:materiality\s+|significance\s+|noise\s+)?(?:threshold|margin|band|tolerance|cut-?off)\b", re.I)
+_THR_NEG = re.compile(r"\b(?:not|no|never|far from|short of|without)\b[^,;]{0,40}$", re.I)
+_THR_NEG_AFTER = re.compile(r"^[^,;.]{0,40}\b(?:not|never)\b", re.I)
+_THR_LE = {"within", "inside", "under", "below", "less than", "fewer than", "at most", "<", "≤"}
+
+
+def plan_thresholds(plan_text: str) -> set[float]:
+    """The percentages the plan's hypotheses use as decision thresholds (support if / refute if)."""
+    return {float(x) for x in _PCT.findall(plan_text or "")}
+
+
+def plan_threshold_mentions(text: str, plan_pcts: set[float], pool: list[float]) -> tuple[str, list[str]]:
+    """A plan threshold ('within 5% of the baseline', 'the 5% threshold') is a parameter, not a measurement. Named as a
+    threshold ('the 5% threshold') it may be quoted as one. Used as a comparison ('within 5%', 'more than 5%') it needs
+    the measured change it is compared with in the same sentence, backed (in pool), and the comparison must hold
+    ('+0.15%, within the 5% threshold'). Returns the text with every threshold
+    mention blanked (so the number check does not also report it) and a problem for each mention that is not backed
+    that way."""
+    if not plan_pcts:
+        return text, []
+    out, problems, pos = [], [], 0
+    for sent_m in re.finditer(r"(?:[^.!?\n]|\.(?=\d))+(?:[.!?]|$)|[^\n]+", text):
+        sent = sent_m.group(0)
+        mentions, measured = [], []
+        for m in _PCT.finditer(sent):
+            val = abs(float(m.group(1)))
+            before, after = sent[:m.start()], sent[m.end():]
+            op = _THR_OP.search(before)
+            framed = op or _THR_NOUN_BEFORE.search(before) or _THR_NOUN_AFTER.search(after)
+            if framed and any(abs(val - t) < 1e-9 for t in plan_pcts):
+                kind = (op.group("op") or op.group("sym")).lower() if op else ""
+                # 'not a meaningful reduction (>5%)', 'far from the >5% threshold': the comparison is negated
+                neg = bool(op) and bool(_THR_NEG.search(before[:op.start()]) or _THR_NEG_AFTER.search(after))
+                mentions.append((m, val, kind, neg))
+            elif any(abs(val - c) <= max(0.051, 0.005 * val) for c in pool):
+                measured.append(val)
+        for m, val, kind, neg in mentions:
+            if kind:
+                le = (kind in _THR_LE) != neg
+                ok = any((x <= val) if le else (x >= val) for x in measured)
+            else:  # named as a threshold ('the ±5% threshold for fares is analyst-defined'): a parameter, stated as one
+                ok = True
+            if not ok:
+                problems.append(f"'{m.group(0).strip()}' is a threshold from the plan's hypotheses, not a measurement: quote it only in "
+                                f"the same sentence as the measured change it is compared with (e.g. '+0.15%, within the "
+                                f"{val:g}% threshold'), and only when that comparison holds; otherwise state the measured change")
+        s = list(sent)
+        for m, *_ in mentions:
+            s[m.start():m.end()] = " " * (m.end() - m.start())
+        out.append(text[pos:sent_m.start()] + "".join(s))
+        pos = sent_m.end()
+    out.append(text[pos:])
+    return "".join(out), problems

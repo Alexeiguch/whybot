@@ -15,7 +15,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .agents import Analyst, Critic, Planner, SQLAgent, Writer
-from .checks import CHECKS_VERSION, check_claim_numbers, check_consistency, decide_next, drop_uncited, result_sanity, tables_in_sql, validate_final
+from .checks import (CHECKS_VERSION, check_calendar_sql, check_claim_numbers, check_consistency, check_critic_verdicts, decide_next,
+                     drop_uncited, repair_table_names, result_sanity, tables_in_sql, validate_final)
 from .config import ROOT, Settings
 from .datasource import DataSource, DataSourceError, guard_sql, make_datasource, sql_hash
 from .evidence import Evidence
@@ -115,6 +116,7 @@ class WhyBot:
             h = llm.header
             self._recorded_recall = h.get("hmem_recall")
             self._checks_version = int(h.get("checks_version", 1))
+            self._recorded_notes = {k: h[k] for k in ("table_notes", "dialect_notes") if k in h}
             tr.emit("Orchestrator", "llm_mode", status="info",
                     output_summary=f"SAMPLE_MODE REPLAY of live run {h.get('live_run_id')} recorded {h.get('recorded_at')} "
                                    f"(trace {h.get('trace')}); LLM and SQL outputs come from that run, the checks and branch policy re-execute",
@@ -161,7 +163,7 @@ class WhyBot:
         recording = bool(self.s.record_fixtures and self.s.data_source == "zetaris")
         validate_run_id(run_id, allow_recorded=recording)
         self._question, self._cassette, self._run_id = question, None, run_id
-        self._recorded_recall = None
+        self._recorded_recall, self._recorded_notes, self._dialect_notes = None, {}, ""
         self._checks_version, self._shadow, self._notes = CHECKS_VERSION, [], self.notes
         result = None
         t0 = time.time()
@@ -178,7 +180,11 @@ class WhyBot:
             llm = self._make_llm(tr)
             llm.deadline, llm.call_timeout_s = deadline, self.s.llm_timeout_s
             ds = self._make_ds(tr)
-            self._notes = getattr(ds, "table_notes", None) or self.notes
+            # Notes the prompts were recorded with: the cassette's own (v4+), else catalog.json's, else the current file
+            self._notes = self._recorded_notes.get("table_notes") or getattr(ds, "table_notes", None) or self.notes
+            self._dialect_notes = self._recorded_notes.get("dialect_notes", ds.dialect_notes)
+            if self._cassette is not None:
+                self._cassette.header.update(table_notes=self._notes, dialect_notes=self._dialect_notes)
             tr.emit("Executor", "datasource", output_summary=ds.label, data={"kind": ds.kind, "dialect": ds.dialect})
             mem = self._make_meterless(tr, replay=ds.kind != "live")
             result = self._investigate(question, run_id, tr, llm, ds, mem, deadline)
@@ -212,7 +218,8 @@ class WhyBot:
 
     # ------------------------------------------------------------------ the loop
     def _investigate(self, question, run_id, tr: Tracer, llm, ds: DataSource, mem, deadline) -> dict:
-        planner, sqlagent, analyst, critic, writer = Planner(llm), SQLAgent(llm), Analyst(llm), Critic(llm), Writer(llm)
+        v = self._checks_version
+        planner, sqlagent, analyst, critic, writer = Planner(llm), SQLAgent(llm, v), Analyst(llm, v), Critic(llm, v), Writer(llm, v)
 
         catalog = ds.catalog()
         tables = [t["table"] for t in catalog]
@@ -314,10 +321,11 @@ class WhyBot:
             prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic
-            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version) for c in claims.claims}
+            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version, plan_text=plan_text) for c in claims.claims}
             if self._checks_version < CHECKS_VERSION:
                 for c in claims.claims:
-                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question).problems if p not in checks[c.cid].problems]
+                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question, plan_text=plan_text).problems
+                             if p not in checks[c.cid].problems]
                     self._note_shadow(f"iteration {it} {c.cid}", extra)
             for cid, ch in checks.items():
                 tr.emit("Critic", "number_check", output_summary=f"{cid}: {'PASS' if ch.ok else 'REJECT ' + '; '.join(ch.problems)}"[:400],
@@ -331,6 +339,8 @@ class WhyBot:
                     report, meta = critic.review(question, plan_text, claims, ok_ev, checks, tables, it, self.s.max_iterations)
                 except LLMError as e:
                     tr.emit("Critic", "failed", output_summary=str(e)[:300], status="error")
+            if report is not None and self._checks_version < 4:
+                self._note_shadow(f"iteration {it} Critic", check_critic_verdicts(report, checks))
             if report is None:
                 report = self._fallback_report(claims, checks, retry=it < self.s.max_iterations)
                 tr.emit("Critic", "fallback_verdicts", output_summary="LLM critic unavailable; deterministic verdicts only", status="fallback")
@@ -378,7 +388,8 @@ class WhyBot:
             tr.emit("Orchestrator", "escalate", output_summary="insufficient evidence: answer will state what is and is not known", status="escalated")
 
         final = self._write(question, status, decision, claims, report, evidence, writer, tr, dq_notes or [],
-                            hyp_kinds={k: h.kind for k, h in hypotheses.items()})
+                            hyp_kinds={k: h.kind for k, h in hypotheses.items()},
+                            plan_text="\n".join(f"{h.support_if} {h.refute_if}" for h in hypotheses.values()))
         self._remember(mem, tr, run_id, question, status, final, evidence, report)
         if mem and markov_steps:
             rec = self._safe(tr, lambda: mem.record_run(question, markov_steps + ["[TASK_COMPLETE]"]))
@@ -407,12 +418,20 @@ class WhyBot:
         cat = catalog
         for attempt in range(self.s.max_sql_repairs + 1):
             try:
-                draft, meta = sqlagent.write(spec.purpose, spec.tables, cat, self._notes, ds.dialect, ds.dialect_notes,
+                draft, meta = sqlagent.write(spec.purpose, spec.tables, cat, self._notes, ds.dialect, self._dialect_notes,
                                              memory_text, question, failed)
             except LLMError as e:
                 ev.error = str(e)
                 tr.emit("Executor", "sql_generation_failed", output_summary=str(e)[:300], status="error", retry_count=attempt)
                 break
+            if self._checks_version < 4:
+                self._note_shadow(f"{qid} SQL", check_calendar_sql(draft.sql))
+                self._note_shadow(f"{qid} SQL", [f"table name {r} would be repaired" for r in repair_table_names(draft.sql, tables)[1]])
+            if self._checks_version >= 4:  # a close miss (whybot.date_dim) names exactly one allowlisted table: repair it
+                draft.sql, repairs = repair_table_names(draft.sql, tables)
+                if repairs:
+                    tr.emit("Executor", "sql_table_name_repaired", output_summary=f"{qid}: " + "; ".join(repairs), status="info",
+                            retry_count=attempt, data={"qid": qid, "repairs": repairs})
             used = tables_in_sql(draft.sql, tables) or spec.tables
             try:
                 draft.sql = guard_sql(draft.sql, allowed_tables=ds.allowed_tables())  # the exact SQL that runs is the SQL that is hashed and cited
@@ -595,7 +614,8 @@ class WhyBot:
                     f"date(s): {items}. Holidays come from Nager.Date only [DQ1 {tag}].")
         return ans.model_copy(update={"caveats": keep})
 
-    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=(), hyp_kinds=None) -> FinalAnswer:
+    def _write(self, question, status, decision, claims, report, evidence, writer, tr, dq_notes=(), hyp_kinds=None,
+               plan_text="") -> FinalAnswer:
         sup_ids = set(decision.supported_cids)
         verdicts = {v.cid: v for v in (report.verdicts if report else [])}
         supported = [{**c.model_dump(), "critic": verdicts[c.cid].reason} for c in claims.claims if c.cid in sup_ids]
@@ -619,9 +639,10 @@ class WhyBot:
             sup_text = [(hyp_kinds or {}).get(c["hypothesis_id"], "other") + ": " + c["statement"]
                         for c in supported if c["direction"] == "supports"]
             probs = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, version=self._checks_version,
-                                   supported_statements=sup_text)
+                                   supported_statements=sup_text, plan_text=plan_text)
             if self._checks_version < CHECKS_VERSION:
-                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, supported_statements=sup_text)
+                now = validate_final(ans, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes, supported_statements=sup_text,
+                                     plan_text=plan_text)
                 self._note_shadow("Writer draft", [p for p in now if p not in probs])
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []

@@ -50,7 +50,7 @@ class ZetarisJDBCSource(DataSource):
     kind = "live"
     dialect = "Zetaris Lightning SQL (Spark SQL dialect)"
     dialect_notes = (
-        "Spark SQL functions: to_date(ts), date_format(d,'EEEE') for weekday name, dayofweek(d) returns 1=Sunday..7=Saturday, "
+        "Spark SQL functions: to_date(ts), date_format(d,'EEEE') for weekday name, dayofweek(d) returns 1=Sunday..7=Saturday (but TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday), "
         "to_date(CAST(x AS STRING),'yyyyMMdd') for yyyymmdd integers, date_add/datediff, CASE WHEN. "
         "Reference tables by their full two-part name exactly as listed under TABLES (e.g. whybot.yellow_daily). No semicolons. Prefer aggregated outputs (<200 rows). "
         "ZETARIS QUIRKS (verified): (1) never read the same whybot.* view twice in one query (no self-joins, no two CTEs over the same view): "

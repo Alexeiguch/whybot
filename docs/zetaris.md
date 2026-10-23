@@ -10,9 +10,15 @@
 
 ## Box quirks (not part of the product)
 - dockerd runs by hand: `sudo dockerd > /tmp/dockerd.log 2>&1 &`. There is no systemd.
-- The box's legacy iptables has a FORWARD DROP policy that blocked traffic on the compose bridge. Fix it with:
-  `sudo iptables-legacy -I DOCKER-USER -i br-93fc3ab2c5f9 -j ACCEPT && sudo iptables-legacy -I DOCKER-USER -o br-93fc3ab2c5f9 -j ACCEPT`.
-  This does not persist. Re-apply it after a dockerd restart; the bridge name comes from `docker network ls`, the `zetaris_default` network.
+- The box's legacy iptables has a FORWARD DROP policy that blocked traffic on the compose bridge. The bridge is `br-` plus
+  the first 12 characters of the `zetaris_default` network id, which changes whenever the network is recreated, so look it
+  up rather than hardcoding it (run after `docker compose up` has created the network):
+  ```
+  BR=br-$(sudo docker network inspect -f '{{.Id}}' zetaris_default | cut -c1-12)
+  sudo iptables-legacy -C DOCKER-USER -i "$BR" -j ACCEPT 2>/dev/null || sudo iptables-legacy -I DOCKER-USER -i "$BR" -j ACCEPT
+  sudo iptables-legacy -C DOCKER-USER -o "$BR" -j ACCEPT 2>/dev/null || sudo iptables-legacy -I DOCKER-USER -o "$BR" -j ACCEPT
+  ```
+  This does not persist. Re-apply it after a dockerd restart or a `docker compose down`.
 
 ## Data coverage (measured 22 Oct 2026 over JDBC)
 | Source | Table | Rows | Date range | Notes |

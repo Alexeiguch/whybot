@@ -135,3 +135,4 @@ def test_replay_uses_the_table_notes_it_was_recorded_with(tmp_path, monkeypatch)
     calls = [e for e in events if e["action"] == "llm_call"]
     assert calls and all((e.get("data") or {}).get("prompt_match") is True for e in calls)
     assert not [e for e in events if e["action"] == "replay_drift"]
+

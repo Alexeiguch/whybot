@@ -26,7 +26,7 @@ class MeterlessError(RuntimeError):
 
 
 class Meterless:
-    def __init__(self, data_dir: Path, timeout_s: float = 20.0):
+    def __init__(self, data_dir: Path, timeout_s: float = 20.0, startup_timeout_s: float = 90.0):
         tsx = BRIDGE_DIR / "node_modules" / ".bin" / "tsx"
         if not tsx.exists():
             raise MeterlessError("Meterless bridge not installed: run `npm install` in meterless_bridge/")
@@ -41,9 +41,17 @@ class Meterless:
         self.p = subprocess.Popen([str(tsx), "bridge.ts"], cwd=BRIDGE_DIR, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                   stderr=self._errlog, text=True, env=env)
         self.ids = itertools.count(1)
-        self.timeout_s = timeout_s
         self._lock = threading.Lock()
-        ready = self._read()
+        # a cold start compiles bridge.ts with tsx, which took over 20 s on a loaded box: allow longer for the ready line
+        self.timeout_s = startup_timeout_s
+        try:
+            ready = self._read()
+        except MeterlessError:
+            self.p.kill()
+            self._errlog.close()
+            raise
+        finally:
+            self.timeout_s = timeout_s
         if not ready.get("result", {}).get("ready"):
             raise MeterlessError(f"bridge failed to start: {ready}")
 
