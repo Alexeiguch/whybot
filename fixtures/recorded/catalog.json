@@ -3,6 +3,17 @@
  "recorded_at": "2026-10-22T18:00:04+00:00",
  "dialect": "Zetaris Lightning SQL (Spark SQL dialect)",
  "dialect_notes": "Spark SQL functions: to_date(ts), date_format(d,'EEEE') for weekday name, dayofweek(d) returns 1=Sunday..7=Saturday, to_date(CAST(x AS STRING),'yyyyMMdd') for yyyymmdd integers, date_add/datediff, CASE WHEN. Reference tables by their full two-part name exactly as listed under TABLES (e.g. whybot.yellow_daily). No semicolons. Prefer aggregated outputs (<200 rows). ZETARIS QUIRKS (verified): (1) never read the same whybot.* view twice in one query (no self-joins, no two CTEs over the same view): it fails with MISSING_ATTRIBUTES; compare target vs baseline with conditional aggregation instead, e.g. MAX(CASE WHEN trip_date = DATE '2024-11-28' THEN trips END) AS target_trips, AVG(CASE WHEN trip_date <> DATE '2024-11-28' THEN trips END) AS baseline_avg_trips, or simply return one row per date. Joining two DIFFERENT views on the date key is fine. (2) Compare dates with DATE 'yyyy-mm-dd' literals, never integers. date_add(d, n) takes 2 arguments. (3) An error like \"mismatched input ... expecting {'ADD', 'ANALYZE', ...}\" or \"expecting 'METADATA'\" means the statement failed to parse or resolve: simplify it, use only listed column names, and avoid short table aliases at the start of the select list.",
+ "table_notes": {
+  "whybot.yellow_daily": "Zetaris SchemaStore view (cached) over NY_TAXI.yellow_taxi (real NYC TLC yellow trips): one row per day 2024-04-01..2025-02-28. trip_date DATE, trips = trip count, avg_total_amount = mean total_amount USD per trip, avg_trip_distance = mean miles. Fast. Use for the metric, weekday baselines and fare/distance mix.",
+  "whybot.nyc_weather_daily": "Zetaris view over NOAA GHCN-Daily, Central Park station USW00094728 (real, CC0): obs_date DATE (2024-01-01..2025-02-05), prcp_mm (mm), snow_mm (mm snowfall), tmax_c, tmin_c (deg C). Join on obs_date = trip_date.",
+  "whybot.us_holidays": "Zetaris view over Nager.Date REST (real US holidays 2024-2025): holiday_date DATE, holiday_name, is_national (true = federal, false = state-only). The authoritative holiday source.",
+  "TPCDS_DB.date_dim": "TPC-DS calendar: d_date DATE, d_day_name, d_dow (0=Sunday), d_weekend ('Y' on Fri and Sat in this build), d_holiday ('Y'/'N'). d_holiday is SYNTHETIC and unreliable; use it only to flag data-quality disagreements with whybot.us_holidays. Use d_day_name for weekdays.",
+  "NY_TAXI.taxi_zones": "Real TLC zone lookup polygons.",
+  "NY_TAXI.yellow_taxi": "Raw real TLC yellow trips (38.7M rows, all columns STRING, cast before arithmetic; pickup date = to_date(substr(tpep_pickup_datetime,1,10))). Uncached scan ~170 s: at most one narrow query. Contains outlier timestamps (2002, 2026).",
+  "NY_TAXI.yellow_tripdata": "DEV-ONLY sample: NYC TLC yellow taxi trips Jan-Feb 2024, one row per trip.",
+  "NOAA_GHCN_S3.noaa_ghcn_daily_2024": "DEV-ONLY sample: NOAA GHCN-Daily long format (ID station, DATE yyyymmdd int, ELEMENT PRCP tenths mm / SNOW mm / TMAX,TMIN tenths C, DATA_VALUE). Filter ID='USW00094728' (Central Park).",
+  "HOLIDAYS.us_public_holidays_2024": "DEV-ONLY sample: US public holidays 2024 (Nager.Date)."
+ },
  "catalog": [
   {
    "table": "whybot.yellow_daily",

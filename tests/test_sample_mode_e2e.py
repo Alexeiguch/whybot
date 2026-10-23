@@ -122,3 +122,16 @@ def test_new_recordings_store_the_checks_version(tmp_path):
     data = json.loads((tmp_path / "c.json").read_text())
     assert data["checks_version"] == CHECKS_VERSION and len(data["calls"]) == 1
     assert CassetteLLM(tmp_path / "c.json").header.get("checks_version") == CHECKS_VERSION
+
+
+def test_replay_uses_the_table_notes_it_was_recorded_with(tmp_path, monkeypatch):
+    """Editing whybot/catalog_notes.json must not make a committed recording drift: the replay sends the notes stored
+    in fixtures/recorded/catalog.json."""
+    import whybot.notes as notes
+    edited = tmp_path / "catalog_notes.json"
+    edited.write_text(json.dumps({"whybot.yellow_daily": "EDITED NOTE: join on trip_date"}))
+    monkeypatch.setattr(notes, "NOTES_PATH", edited)
+    res, events = _replay("example_1.json", tmp_path, monkeypatch)
+    calls = [e for e in events if e["action"] == "llm_call"]
+    assert calls and all((e.get("data") or {}).get("prompt_match") is True for e in calls)
+    assert not [e for e in events if e["action"] == "replay_drift"]

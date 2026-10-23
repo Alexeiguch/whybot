@@ -59,7 +59,12 @@ class ZetarisJDBCSource(DataSource):
         "or simply return one row per date. Joining two DIFFERENT views on the date key is fine. "
         "(2) Compare dates with DATE 'yyyy-mm-dd' literals, never integers. date_add(d, n) takes 2 arguments. "
         "(3) An error like \"mismatched input ... expecting {'ADD', 'ANALYZE', ...}\" or \"expecting 'METADATA'\" means the statement failed to parse or resolve: "
-        "simplify it, use only listed column names, and avoid short table aliases at the start of the select list."
+        "simplify it, use only listed column names, and avoid short table aliases at the start of the select list. "
+        "(4) Cross-source joins are on the date key, each view read once; this one is verified (sql/10, about 17 s for 62 days): "
+        "SELECT y.trip_date, y.trips, w.prcp_mm, w.snow_mm, h.holiday_name, d.d_day_name "
+        "FROM whybot.yellow_daily y JOIN whybot.nyc_weather_daily w ON w.obs_date = y.trip_date "
+        "LEFT JOIN whybot.us_holidays h ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date "
+        "WHERE y.trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' ORDER BY y.trip_date"
     )
 
     def __init__(self, databases: list[str], tables: list[str] | None = None):

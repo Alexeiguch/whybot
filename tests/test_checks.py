@@ -494,3 +494,58 @@ def test_writer_validator_rejects_a_false_comparison_in_a_final_claim():
                                                               "than the other three Mondays", citations=[cit])])
     assert any("claim 1: 'higher than the other'" in p for p in validate_final(ans, {"Q6": e}, {"Q6"}, context="20 Jan 2025"))
     assert not any("higher than" in p for p in validate_final(ans, {"Q6": e}, {"Q6"}, context="20 Jan 2025", version=1))
+
+
+# ---- cause naming (checks v3): every named cause needs a supported claim of that kind, or a hedge
+from whybot.checks import check_causes, named_causes  # noqa: E402
+
+RUN1_ANSWER = ("Trips fell to 77,244 from an average of 141,603 on other November Thursdays, a decline driven by the "
+               "Thanksgiving holiday and adverse weather (21.8 mm rain, 9.4 °C max temp).")
+
+
+def test_run1_answer_names_the_holiday_without_a_supported_holiday_claim():
+    supported = ["metric: Trips on Thanksgiving Thursday 2024-11-28 fell 45.5%", "weather: 21.8 mm rain on 2024-11-28"]
+    probs = check_causes(RUN1_ANSWER, supported)
+    assert len(probs) == 1 and "names holiday as a cause" in probs[0], probs
+    assert check_causes(RUN1_ANSWER, supported + ["holiday: 2024-11-28 was Thanksgiving Day (national holiday)"]) == []
+
+
+@pytest.mark.parametrize("text", [
+    "The drop may have been driven by the Thanksgiving holiday.",
+    "The holiday could explain the drop, but this was not tested.",
+    "The decline was not driven by the weather.",
+    "Trips dropped on Thanksgiving Thursday 28 Nov 2024.",                     # names the day, not a cause
+    "The jump coincided with MLK Day, but the root cause remains unclear.",
+    "The holiday is consistent with the drop.",
+])
+def test_hedged_negated_or_non_causal_mentions_pass(text):
+    assert check_causes(text, ["metric: trips fell 45.5%"]) == []
+
+
+@pytest.mark.parametrize("text,cause", [
+    ("Rain caused the drop.", "weather"),
+    ("The drop was due to heavy snowfall.", "weather"),
+    ("The fare jump reflects longer trips to the airport.", "trip mix"),
+    ("Thanksgiving was the main driver of the decline.", "holiday"),
+])
+def test_unhedged_causes_are_found(text, cause):
+    assert [k for k, _ in named_causes(text)] == [cause]
+
+
+def test_refuting_or_metric_claims_do_not_back_a_cause():
+    # only claims that SUPPORT a hypothesis reach check_causes (the orchestrator filters by direction); a metric claim
+    # mentioning the holiday by name backs nothing, an 'other' claim backs what it names
+    assert check_causes("The drop was due to rain.", ["metric: trips fell on the rainy Thursday"])
+    assert check_causes("The drop was due to rain.", ["other: rain of 21.8 mm coincided with the drop"]) == []
+
+
+def test_writer_validator_applies_the_cause_check_from_v3_only():
+    e = Evidence(qid="Q1", iteration=1, hypothesis_id="H0", purpose="p", sql="SELECT 1", sql_hash="sha256:aa", tables=["whybot.yellow_daily"],
+                 status="ok", columns=["trip_date", "trips"], rows=[["2024-11-28", 77244]], row_count=1)
+    cit = Citation(qid="Q1", sql_hash="sha256:aa", table="whybot.yellow_daily")
+    ans = FinalAnswer(headline="Trips fell on 2024-11-28", answer="The drop to 77,244 was driven by the holiday.", recommendation="r",
+                      confidence=0.5, claims=[FinalClaim(text="Trips were 77,244 on 2024-11-28.", citations=[cit])])
+    sup = ["metric: Trips were 77,244 on 2024-11-28."]
+    assert any("names holiday" in p for p in validate_final(ans, {"Q1": e}, {"Q1"}, context="2024-11-28", supported_statements=sup))
+    assert not any("names holiday" in p for p in validate_final(ans, {"Q1": e}, {"Q1"}, context="2024-11-28", version=2,
+                                                                supported_statements=sup))

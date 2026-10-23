@@ -28,6 +28,7 @@ class ReplayDataSource(DataSource):
         self.dialect_notes = cat.get("dialect_notes", "")
         if os.environ.get("SAMPLE_LLM", "replay") == "live":
             self.dialect_notes += " REPLAY MODE: only previously recorded queries can be answered."
+        self.table_notes = cat.get("table_notes")  # the catalog notes the recorded run was given (None: use the current file)
         self._catalog = cat["catalog"]
         self._fx: dict[str, dict] = {}
         for p in sorted((self.dir / "queries").glob("*.json")):
