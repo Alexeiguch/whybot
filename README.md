@@ -80,7 +80,7 @@ Python 3.11+ (FastAPI, pydantic, openai client, JayDeBeApi), Node 20 (`tsx`, for
 
 ```bash
 git clone https://github.com/Alexeiguch/whybot && cd whybot
-python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt -r playground/requirements.txt
 (cd meterless_bridge && npm ci)          # Meterless bridge (Node 20+)
 cp .env.example .env                       # fill NVIDIA_API_KEY and the ZETARIS_* values; never commit .env
 ```
