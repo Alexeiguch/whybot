@@ -176,7 +176,9 @@ Replayed on the current code, every LLM call hashes to the same prompt as the li
 
 ## Demo video
 
-[TBD: link to the 1-4 minute demo video]
+{{VIDEO_URL}}
+
+*(Replace `{{VIDEO_URL}}` with the public link once uploaded. From the submission folder: `./set_video_url.sh URL`.)*
 
 ## Logs and traces
 
