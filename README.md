@@ -176,9 +176,9 @@ Replayed on the current code, every LLM call hashes to the same prompt as the li
 
 ## Demo video
 
-{{VIDEO_URL}}
+https://iframe.mediadelivery.net/embed/778121/7f43edd3-f329-4a91-b5a8-7632fb02d50b
 
-*(Replace `{{VIDEO_URL}}` with the public link once uploaded. From the submission folder: `./set_video_url.sh URL`.)*
+*(Replace `https://iframe.mediadelivery.net/embed/778121/7f43edd3-f329-4a91-b5a8-7632fb02d50b` with the public link once uploaded. From the submission folder: `./set_video_url.sh URL`.)*
 
 ## Logs and traces
 
