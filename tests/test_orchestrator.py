@@ -210,7 +210,7 @@ def test_only_a_live_recording_may_replace_a_recorded_trace(tmp_path):
 
 def test_failed_follow_up_plan_finishes_with_verified_claims(settings):
     llm = FakeLLM({"planner": [PLAN, "not json"], "sql": [SQL_TRIPS, SQL_SNOW_OK], "analyst": [CLAIMS],
-                   "critic": [critic("retry")],
+                   "critic": [critic("retry", verdict="weak")],
                    "writer": [writer_for([("Q1", sql_hash(SQL_TRIPS["sql"] + " LIMIT 500"), "NY_TAXI.yellow_tripdata")])]})
     res = WhyBot(settings, llm=llm, datasource=FakeSource(routes()), use_meterless=False, echo=False).run("why?")
     assert res["status"] != "error"

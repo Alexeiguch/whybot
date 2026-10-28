@@ -409,7 +409,7 @@ class Decision:
 
 
 def decide_next(iteration: int, max_iterations: int, report: CriticReport, checks: dict[str, NumericCheck],
-                evidence: dict[str, Evidence], out_of_time: bool = False) -> Decision:
+                evidence: dict[str, Evidence], out_of_time: bool = False, version: int = CHECKS_VERSION) -> Decision:
     """Branching policy. Numeric checks override the LLM critic: a claim with a bad number is never 'supported'."""
     supported = [v.cid for v in report.verdicts
                  if v.verdict == "supported" and checks.get(v.cid, NumericCheck(v.cid, False, ["unchecked"])).ok]
@@ -420,6 +420,11 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
 
     if report.decision == "accept" and explained:
         return Decision("write", f"critic accepted; {len(supported)} supported claims", supported)
+    if version >= 7 and explained and not failed_queries and report.verdicts and len(supported) == len(report.verdicts):
+        # run v7e: every claim supported and number-checked, the holiday cause supported, yet the critic asked for two
+        # optional follow-ups; the next two iterations took 398 s and drafted weaker claims. A complete, checked
+        # explanation is written now; open hypotheses (e.g. weather 'inconclusive') stay in the caveats.
+        return Decision("write", f"all {len(supported)} claims supported and number-checked; follow-ups not needed", supported)
     if report.decision == "insufficient_evidence" and not report.follow_up_queries:
         return Decision("escalate", "critic judged the evidence insufficient and proposed no further tests", supported)
     if can_retry and (report.decision == "retry" or report.follow_up_queries or failed_queries or not explained):

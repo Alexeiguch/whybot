@@ -549,3 +549,14 @@ def test_writer_validator_applies_the_cause_check_from_v3_only():
     assert any("names holiday" in p for p in validate_final(ans, {"Q1": e}, {"Q1"}, context="2024-11-28", supported_statements=sup))
     assert not any("names holiday" in p for p in validate_final(ans, {"Q1": e}, {"Q1"}, context="2024-11-28", version=2,
                                                                 supported_statements=sup))
+
+
+def test_fully_supported_explanation_is_written_without_optional_followups():
+    # run v7e: all claims supported and number-checked at iteration 1, but the critic's 'retry' cost two more iterations
+    r = report("retry", follow=True)
+    assert decide_next(1, 3, r, ok_checks(), {"Q1": ev()}, version=7).action == "write"
+    assert decide_next(1, 3, r, ok_checks(), {"Q1": ev()}, version=6).action == "retry"
+    weak = CriticReport(verdicts=r.verdicts + [ClaimVerdict(cid="C2", verdict="weak", strength=0.4, reason="r")],
+                        hypothesis_status=r.hypothesis_status, decision="retry", feedback="fb", follow_up_queries=r.follow_up_queries)
+    assert decide_next(1, 3, weak, ok_checks(), {"Q1": ev()}, version=7).action == "retry"
+    assert decide_next(1, 3, r, ok_checks(), {"Q1": ev(), "Q2": ev(status="failed")}, version=7).action == "retry"

@@ -413,7 +413,8 @@ class WhyBot:
             for hs in report.hypothesis_status:  # latest non-'untested' status wins across iterations
                 if hs.status != "untested" or hs.hypothesis_id not in hyp_status:
                     hyp_status[hs.hypothesis_id] = hs
-            decision = decide_next(it, self.s.max_iterations, report, checks, evidence, out_of_time=time.time() > deadline - min(WRITER_RESERVE_S, 0.2 * self.s.run_timeout_s))
+            decision = decide_next(it, self.s.max_iterations, report, checks, evidence, out_of_time=time.time() > deadline - min(WRITER_RESERVE_S, 0.2 * self.s.run_timeout_s),
+                                   version=self._checks_version)
             tr.emit("Orchestrator", "branch", output_summary=f"{decision.action}: {decision.reason}",
                     target_agent={"retry": "Planner", "write": "Writer", "escalate": "Writer"}[decision.action],
                     status="retry" if decision.action == "retry" else ("escalated" if decision.action == "escalate" else "success"))
