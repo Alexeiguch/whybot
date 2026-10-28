@@ -37,8 +37,12 @@ class Planner:
         "On later iterations, only add queries that address the critic feedback; do not repeat queries that already succeeded."
     )
 
-    def __init__(self, llm: BaseLLM):
-        self.llm = llm
+    # v7: the Planner (Ultra, ~25 tokens/s) spent 59 s writing 1,468 tokens; the plan's content needs far fewer
+    SYSTEM_V7 = (" Be brief: one short sentence (at most 25 words) for each statement, support_if, refute_if and purpose, "
+                 "and reply with compact JSON on one line (no indentation).")
+
+    def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
+        self.llm, self.version = llm, version
 
     def plan(self, question: str, catalog: list[dict], notes: dict, memory: str, carryover: str,
              feedback: str, done_queries: list[str], iteration: int, required: list[str] | None = None) -> tuple[Plan, dict]:
@@ -72,7 +76,8 @@ class Planner:
                         errs.append(f"table {t} is not in the catalog")
             return errs
 
-        return self.llm.complete_json("planner", self.SYSTEM, user, Plan, validator=validate, max_tokens=3000)
+        system = self.SYSTEM + (self.SYSTEM_V7 if self.version >= 7 else "")
+        return self.llm.complete_json("planner", system, user, Plan, validator=validate, max_tokens=3000)
 
 
 class SQLAgent:
@@ -231,6 +236,9 @@ class Critic:
                  "such a claim supported and set the hypothesis refuted; never mark a claim unsupported because of the direction its "
                  "hypothesis expected.")
 
+    SYSTEM_V7 = (" Be brief: each verdict reason is one sentence of at most 25 words, and reply with compact JSON on one line "
+                 "(no indentation). Never compute new statistics in a reason (no CVs or percentages that no claim states).")
+
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
 
@@ -239,7 +247,7 @@ class Critic:
         cids = {c.cid for c in claims.claims}
         checks_txt = "\n".join(f"{cid}: {'PASS' if ch.ok else 'FAIL - ' + '; '.join(ch.problems)}" for cid, ch in auto_checks.items())
         user = (f"QUESTION: {question}\nITERATION {iteration} of {max_iterations}\n\nHYPOTHESES:\n{plan_text}\n\n"
-                f"CLAIMS:\n{json.dumps([c.model_dump() for c in claims.claims], indent=1)}\n\nAUTOMATED NUMBER CHECKS:\n{checks_txt}\n\n"
+                f"CLAIMS:\n{json.dumps([c.model_dump() for c in claims.claims], indent=None if self.version >= 7 else 1)}\n\nAUTOMATED NUMBER CHECKS:\n{checks_txt}\n\n"
                 f"EVIDENCE:\n" + "\n\n".join(e.for_prompt() for e in evidence) + f"\n\nCATALOG TABLES: {', '.join(catalog_tables)}")
 
         def validate(r: CriticReport) -> list[str]:
@@ -254,7 +262,7 @@ class Critic:
                 errs += check_critic_verdicts(r, auto_checks)
             return errs
 
-        system = self.SYSTEM + (self.SYSTEM_V4 if self.version >= 4 else "")
+        system = self.SYSTEM + (self.SYSTEM_V4 if self.version >= 4 else "") + (self.SYSTEM_V7 if self.version >= 7 else "")
         return self.llm.complete_json("critic", system, user, CriticReport, validator=validate, max_tokens=3000)
 
 

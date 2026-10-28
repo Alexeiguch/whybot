@@ -128,7 +128,7 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
         if not any(value_matches(cv.value, r[idx]) for r in rows):
             problems.append(f"{cv.qid}.{cv.column}={cv.value} not found in returned rows")
     corrections: list[str] = []
-    problems += check_derived_values(claim, corrections, plan_thresholds(plan_text) if version >= 5 else None)
+    problems += check_derived_values(claim, corrections, plan_thresholds(plan_text) if version >= 5 else None, version=version)
     problems += check_weather_wording(claim.statement, evidence, context)
     if version >= 5:
         problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
@@ -336,7 +336,8 @@ def check_direction(claim: Claim) -> list[str]:
     return []
 
 
-def check_derived_values(claim: Claim, corrections: list[str] | None = None, plan_pcts: set[float] | None = None) -> list[str]:
+def check_derived_values(claim: Claim, corrections: list[str] | None = None, plan_pcts: set[float] | None = None,
+                         version: int = CHECKS_VERSION) -> list[str]:
     """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
     recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
     the model's. Values further off are rejected. Every % or Nx ratio in the statement must then be one of the
@@ -347,7 +348,18 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None, pla
         try:
             actual = eval_formula(d.formula, nums)
         except ValueError as e:
-            problems.append(f"derived {d.name}: {e}")
+            msg = f"derived {d.name}: {e}"
+            if version >= 7:
+                # b-v7a: 'avg(v2,v3,v4)' with three cited values failed three times on "Name(id='v4')", which says nothing
+                # about why. Name the variables that exist, so the repair is one step.
+                names = ", ".join(f"v{i + 1} = {cv.qid}.{cv.column} {cv.value}" for i, cv in enumerate(claim.cited_values))
+                missing = sorted(set(re.findall(r"\bv(\d+)\b", d.formula)) - {str(i + 1) for i in range(len(nums))}, key=int)
+                why = (f"{', '.join('v' + m for m in missing)} not defined: the formula may use only v1..v{len(nums)}, one per "
+                       f"cited value in order ({names}); cite every value the formula uses (e.g. each baseline day), or use "
+                       f"a cited average directly" if missing else
+                       f"the formula may use v1..v{len(nums)} ({names}), numbers, + - * / and avg/sum/min/max/abs")
+                msg = f"derived {d.name}: {why}"
+            problems.append(msg)
             continue
         ph = "{" + d.name + "}"
         if d.value is None or ph in claim.statement:

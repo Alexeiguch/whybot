@@ -261,3 +261,17 @@ def test_schema_cache_reuses_column_lists_within_ttl(tmp_path, monkeypatch):
     (tmp_path / "zetaris_schema.json").unlink()
     src()._store_catalog([{"table": "whybot.yellow_daily", "columns": [], "note": ""}], 1.0)
     assert not (tmp_path / "zetaris_schema.json").exists()
+
+
+def test_undefined_formula_variable_names_the_cited_values():
+    # mac-live-thanksgiving-v7a: three Analyst attempts on "unsupported expression: Name(id='v4')" with three cited values
+    from whybot.checks import check_derived_values
+    c = Claim.model_validate({"cid": "c0", "hypothesis_id": "H0", "direction": "supports",
+                              "statement": "Trips on 2024-11-28 were {p}% vs the mean of the other three Thursdays",
+                              "cited_values": [{"qid": "Q1", "column": "trips", "value": 77244, "row_hint": "trip_date=2024-11-28"},
+                                               {"qid": "Q1", "column": "baseline_avg_trips", "value": 141603.0, "row_hint": "avg"},
+                                               {"qid": "Q1", "column": "target_trips", "value": 77244, "row_hint": "trip_date=2024-11-28"}],
+                              "derived": [{"name": "p", "formula": "(v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100"}]})
+    p = check_derived_values(c, version=7)[0]
+    assert "v4 not defined" in p and "v1..v3" in p and "v2 = Q1.baseline_avg_trips 141603.0" in p
+    assert "unsupported expression" in check_derived_values(c.model_copy(deep=True), version=6)[0]
