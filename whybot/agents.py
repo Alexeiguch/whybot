@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import re
 
-from .checks import CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, tables_in_sql, units_text
+from .checks import CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, tables_in_sql, units_text, weekdays_text
 from .evidence import Evidence
 from .llm import BaseLLM
 from .schemas import ClaimSet, CriticReport, FinalAnswer, Plan, SQLDraft
@@ -94,6 +94,10 @@ class SQLAgent:
         if self.version >= 4:
             user += ("\n\nALLOWED TABLES (the evidence allowlist; write these fully-qualified names exactly, any other name is refused): "
                      + ", ".join(known) + "\nCALENDAR: TPCDS_DB.date_dim.d_dow is 0=Sunday, 1=Monday .. 6=Saturday (never 7).")
+        if self.version >= 6:
+            user += (" To filter a weekday use d_day_name (d_day_name = 'Thursday'), not a d_dow number: d_dow Thursday is 4 "
+                     "and Friday is 5. Keep the target date itself in every comparison result (do not filter it out), and "
+                     "return the date column so each row says which day it is.")
         if failed:
             user += "\n\nPREVIOUS ATTEMPTS FAILED (repair the query):\n" + "\n".join(
                 f"SQL: {f['sql']}\nERROR: {f['error'][:700]}" for f in failed[-2:])
@@ -114,7 +118,7 @@ class SQLAgent:
             if not tables_in_sql(s, known):
                 errs.append(f"query must reference the catalog tables by full name: {', '.join(tables or known[:3])}")
             if self.version >= 4:
-                errs += check_calendar_sql(s)
+                errs += check_calendar_sql(s, f"{question}\n{purpose}" if self.version >= 6 else "")
             return errs
 
         d, meta = self.llm.complete_json("sql", self.SYSTEM, user, SQLDraft, validator=validate, max_tokens=1500)
@@ -147,6 +151,11 @@ class Analyst:
                  "days' must hold for every compared day; otherwise say 'on average' or name the days. A threshold from the "
                  "hypotheses (e.g. 5%) is not a measurement: write it only beside the measured change it is compared with.")
 
+    SYSTEM_V6 = (" A claim about a date must cite values from the row for that date (row_hint = that date); a value from "
+                 "another day's row never describes it, and if no returned row has the date, say the data has no row for it. "
+                 "Name a weekday only as the weekday of the rows you cite (see WEEKDAYS): a baseline of Thursdays is 'the other "
+                 "Thursdays'.")
+
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
 
@@ -156,6 +165,8 @@ class Analyst:
                 "\n\n".join(e.for_prompt() for e in evidence) + f"\n\nCRITIC FEEDBACK ON EARLIER DRAFT:\n{feedback or '(none)'}")
         if self.version >= 5:
             user += "\n\n" + units_text(evidence)
+        if self.version >= 6:
+            user += "\n\n" + weekdays_text(evidence)
 
         ev_map = {e.qid: e for e in evidence}
         rounds = {"n": 0}
@@ -177,7 +188,12 @@ class Analyst:
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
-        system = self.SYSTEM + (self.SYSTEM_V5 if self.version >= 5 else "")
+        system = self.SYSTEM
+        if self.version >= 6:  # the example's 'other Saturdays' was copied verbatim onto a Thursday baseline (v5 runs)
+            system = system.replace("'Trips on 2024-12-21 were {pct_change_vs_baseline}% vs the mean of the other Saturdays'",
+                                    "'Trips on <target date> were {pct_change_vs_baseline}% vs the mean of the other <weekday of the "
+                                    "baseline rows>s'")
+        system += (self.SYSTEM_V5 if self.version >= 5 else "") + (self.SYSTEM_V6 if self.version >= 6 else "")
         return self.llm.complete_json("analyst", system, user, ClaimSet, validator=validate, max_tokens=5000)
 
 
@@ -264,5 +280,7 @@ class Writer:
             user += "\n\nThe investigation was escalated: say clearly that the evidence is insufficient, what was ruled out, and what data would settle it."
         if self.version >= 5:
             user += "\n\n" + units_text([e for e in evidence if e.qid in citable])
+        if self.version >= 6:
+            user += "\n\n" + weekdays_text([e for e in evidence if e.qid in citable])
         system = self.SYSTEM + (self.SYSTEM_V5 if self.version >= 5 else "")
         return self.llm.complete_json("writer", system, user, FinalAnswer, validator=validator, max_tokens=2500)

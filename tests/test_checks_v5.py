@@ -25,8 +25,8 @@ def _answer(text, qids=("Q1",)):
                        claims=[FinalClaim(text="t", citations=[Citation(qid=q, sql_hash=EV[q].sql_hash, table=EV[q].tables[0]) for q in qids])])
 
 
-def test_checks_version_is_5():
-    assert CHECKS_VERSION == 5
+def test_checks_version_is_at_least_5():
+    assert CHECKS_VERSION >= 5
 
 
 # ---- (a) units -------------------------------------------------------------------------------------------------------------

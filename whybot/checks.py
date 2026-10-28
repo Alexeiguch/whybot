@@ -26,7 +26,11 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      cited rows (to its stated precision), not just appear somewhere in them; 'higher than the comparison days' must
 #      hold for every compared day (or be worded 'on average' and hold against their mean); a threshold % from the plan's
 #      hypotheses ('within 5%') may be quoted only beside the backed, measured change it is compared with
-CHECKS_VERSION = 5
+#   6: dates and weekdays: a claim that names date D must cite at least one row dated D (values from the 29th never back
+#      a claim about the 28th); a weekday it names ('the other Saturdays', 'baseline Thursdays') must be the weekday of a
+#      cited row; a d_dow filter that is off by one against the question's weekday (Spark dayofweek() numbering used on
+#      TPCDS d_dow) is refused; month names are whole words, so 'marked' or 'declined' never read as March or December
+CHECKS_VERSION = 6
 
 
 def _num(v):
@@ -134,7 +138,118 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
         qids = {cv.qid for cv in claim.cited_values}
         problems += check_units(claim.statement, evidence, qids)
         problems += check_aggregate_labels(claim.statement, evidence, qids, [d.value for d in claim.derived])
+    if version >= 6:
+        problems += check_claim_dates(claim, evidence)
     return NumericCheck(claim.cid, not problems, problems, corrections)
+
+
+# ---- v6: the dates and weekdays a claim names must be the dates and weekdays of the rows it cites ----------------------
+_WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]   # date.weekday() order
+_WEEKDAY_RE = re.compile(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)(s)?\b", re.I)
+_ISO_RE = re.compile(r"\b(20\d\d)-(\d\d)-(\d\d)\b")
+# "excluding 2024-11-28", "other than 28 Nov": a date named only to leave it out needs no row of its own
+_EXCLUDED = re.compile(r"\b(?:excluding|excludes?|excluded|except(?:\s+for)?|other\s+than|apart\s+from|besides|without|not\s+counting)\W+"
+                       r"(?:\w+\W+){0,2}$", re.I)
+
+
+def _cell_dates(row) -> set:
+    import datetime as _dt
+    out = set()
+    for x in row:
+        m = _ISO_RE.match(str(x).strip())
+        if m:
+            try:
+                out.add(_dt.date(int(m.group(1)), int(m.group(2)), int(m.group(3))))
+            except ValueError:
+                pass
+    return out
+
+
+def _cited_rows(cv, ev: Evidence) -> list:
+    """The rows a cited value comes from: the row_hint's rows holding the value, else every row holding the value."""
+    cols = {c.lower(): i for i, c in enumerate(ev.columns)}
+    idx = cols.get(cv.column.lower())
+    if idx is None:
+        return []
+    rows = ev.rows
+    k, eq, v = (cv.row_hint or "").partition("=")
+    ki = cols.get(k.strip().lower()) if eq else None
+    if ki is not None:
+        v = v.strip().strip("'\"")
+        rows = [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
+    return [r for r in rows if value_matches(cv.value, r[idx])]
+
+
+def _stated_dates(text: str, years: set[int]) -> list[tuple]:
+    """(date or (month, day), excluded) for every calendar date the text names. Dates without a year take the year of the
+    cited rows when there is exactly one."""
+    import datetime as _dt
+    out = []
+    for m in _DM_RE.finditer(text):
+        excluded = bool(_EXCLUDED.search(text[:m.start()]))
+        if m.group(5):
+            y = int(m.group(0)[:4])
+            md = (int(m.group(5)), int(m.group(6)))
+        else:
+            md = ((_MON[m.group(2).lower()[:3]], int(m.group(1))) if m.group(1) else (_MON[m.group(3).lower()[:3]], int(m.group(4))))
+            tail = re.match(r",?\s+(20\d\d)\b", text[m.end():])
+            y = int(tail.group(1)) if tail else (next(iter(years)) if len(years) == 1 else None)
+        try:
+            out.append((_dt.date(y, *md) if y else md, excluded))
+        except ValueError:
+            continue
+    return out
+
+
+def check_claim_dates(claim: Claim, evidence: dict[str, Evidence]) -> list[str]:
+    """A claim about date D must cite at least one value from a row dated D, and every weekday it names must be the
+    weekday of a cited row (or of a date it names). Run take mac-live-thanksgiving-20261028T180049Z quoted Friday 29 Nov
+    weather as Thursday 28 Nov's (both values exist in Q3, so the value check passed) and called its Thursday baseline
+    'the other Saturdays'. Claims citing only undated rows (an average over all Thursdays) are checked on weekday
+    names in their cells."""
+    rows = []
+    for cv in claim.cited_values:
+        ev = evidence.get(cv.qid)
+        if ev is not None and ev.status == "ok":
+            rows += _cited_rows(cv, ev)
+    row_dates = set().union(*(_cell_dates(r) for r in rows)) if rows else set()
+    problems = []
+    stated = _stated_dates(claim.statement, {d.year for d in row_dates})
+    if row_dates:
+        backed_md = {(d.month, d.day) for d in row_dates}
+        shown = ", ".join(sorted(d.isoformat() for d in row_dates)[:6])
+        for d, excluded in stated:
+            md = (d.month, d.day) if hasattr(d, "month") else d
+            if not excluded and md not in backed_md:
+                label = d.isoformat() if hasattr(d, "month") else f"{md[0]:02d}-{md[1]:02d}"
+                problems.append(f"the claim is about {label} but none of its cited values comes from a row dated {label} "
+                                f"(cited rows are dated {shown}); cite the {label} row, or say the data has no row for it")
+    weekdays = {_WEEKDAYS[d.weekday()] for d in row_dates}
+    weekdays |= {str(x).strip().title() for r in rows for x in r if str(x).strip().title() in _WEEKDAYS}
+    named = {_WEEKDAYS[d.weekday()] for d, _ in stated if hasattr(d, "weekday")}
+    if weekdays or named:
+        for m in _WEEKDAY_RE.finditer(claim.statement):
+            w = m.group(1).title()
+            plural = bool(m.group(2))
+            ok = w in weekdays if plural else (w in weekdays or w in named)
+            if not ok:
+                actual = ", ".join(sorted(weekdays | named, key=_WEEKDAYS.index))
+                problems.append(f"the claim says {m.group(0)!r} but its cited rows and dates fall on {actual}: "
+                                f"name the weekday of the rows it cites")
+    return list(dict.fromkeys(problems))
+
+
+def weekdays_text(evidence) -> str:
+    """The weekday of every date in the results, so the Analyst and Writer never have to work one out (v6)."""
+    days = set()
+    for ev in evidence:
+        if ev.status == "ok":
+            for r in ev.rows:
+                days |= _cell_dates(r)
+    if not days:
+        return ""
+    return ("WEEKDAYS OF THE DATES IN THE RESULTS (use these; never guess a weekday): "
+            + ", ".join(f"{d.isoformat()} {d.strftime('%A')}" for d in sorted(days)[:60]))
 
 
 _PCT = re.compile(r"(?<![\w.])[-+]?(\d+(?:\.\d+)?)\s?%")
@@ -414,19 +529,19 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
     return problems
 
 
-_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+20\d\d)?\b"
-                      r"|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?\b|\b20\d\d\b", re.I)
+_DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?(?:\s+20\d\d)?\b"
+                      r"|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?\b|\b20\d\d\b", re.I)
 _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k\b|%|x\b|×)?", re.I)
 
 
 _RATE_COL = re.compile(r"pct|percent|ratio|share|change|chg|diff|delta|rate", re.I)
 # "(7, 14, 28)" after "December Saturdays" lists days of the month, not measurements
-_DAY_LIST = re.compile(r"\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?(?:\s+[A-Za-z]+){0,2}\s*\(\s*\d{1,2}(?:\s*(?:,|and|&)\s*\d{1,2})+\s*\)", re.I)
+_DAY_LIST = re.compile(r"\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?(?:\s+[A-Za-z]+){0,2}\s*\(\s*\d{1,2}(?:\s*(?:,|and|&)\s*\d{1,2})+\s*\)", re.I)
 # "the ±5% threshold" is an analyst-chosen tolerance, not a measured value
 _TOLERANCE = re.compile(r"(?:±|\+/-)\s?\d+(?:\.\d+)?\s?%")
 
 
-_MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?"
+_MONTH = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?"
 _LIST_SEP = r"\s*(?:,\s*(?:and\s+|&\s*)?|and\s+|&\s*)"
 _DAY = r"\d{1,2}(?:st|nd|rd|th)?"
 # "2024-11-07, 14, 21" / "Nov 7, 14 and 21": an anchor date followed by more days of the same month
@@ -561,8 +676,8 @@ def check_comparisons(text: str, evidence: dict[str, Evidence], qids: set[str]) 
 
 
 _MON = {m: i for i, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"], 1)}
-_DM_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?|"
-                    r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b|"
+_DM_RE = re.compile(r"\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?|"
+                    r"\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?\s+(\d{1,2})(?:st|nd|rd|th)?\b|"
                     r"\b20\d\d-(\d\d)-(\d\d)\b", re.I)
 
 
@@ -764,13 +879,42 @@ def result_sanity(columns: list[str], rows: list[list]) -> list[str]:
 _DOW7 = re.compile(r"\bd_dow\s*(?:=|==|>=|<=|<>|!=)\s*'?7\b|\bd_dow\s+(?:not\s+)?in\s*\([^)]*\b7\b[^)]*\)", re.I)
 
 
-def check_calendar_sql(sql: str) -> list[str]:
+_DOW_EQ = re.compile(r"\bd_dow\s*(?:=|==)\s*'?(\d)'?(?!\d)|\bd_dow\s+in\s*\(([^)]*)\)", re.I)
+_TPCDS_DOW = {w: (i + 1) % 7 for i, w in enumerate(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"])}
+
+
+def _intended_weekdays(text: str) -> set[str]:
+    """Weekdays a question or query purpose names, in words or through a dated day (2024-11-28 is a Thursday)."""
+    import datetime as _dt
+    out = {m.group(1).title() for m in re.finditer(r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)s?\b", text, re.I)}
+    for y, mo, d in re.findall(r"\b(20\d\d)-(\d\d)-(\d\d)\b", text):
+        try:
+            out.add(_dt.date(int(y), int(mo), int(d)).strftime("%A"))
+        except ValueError:
+            pass
+    return out
+
+
+def check_calendar_sql(sql: str, intent: str = "") -> list[str]:
     """TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday (unlike Spark dayofweek(), 1=Sunday..7=Saturday), so d_dow = 7
-    never matches a row: an empty result that looks like evidence of absence."""
+    never matches a row: an empty result that looks like evidence of absence. With the question and query purpose as
+    intent (checks v6), a d_dow filter that names none of the intended weekdays but is one more than one of them is
+    the Spark numbering used on TPCDS: 'Thursdays' written d_dow = 5 returns Fridays (run 20261028T180049Z, Q3)."""
     s = re.sub(r"'(?:[^']|'')*'", lambda m: m.group(0) if m.group(0) in ("'7'", "'6'") else "''", sql)
     if _DOW7.search(s):
         return ["TPCDS_DB.date_dim.d_dow is 0=Sunday..6=Saturday (Saturday is 6, not 7; Spark dayofweek() is the one that "
                 "uses 1..7): fix the d_dow filter or use d_day_name = 'Saturday'"]
+    want = {_TPCDS_DOW[w] for w in _intended_weekdays(intent)} if intent else set()
+    if want:
+        for m in _DOW_EQ.finditer(sql):  # each filter on its own: 'IN (1,2,3,4,5)' elsewhere does not excuse 'd_dow = 5'
+            vals = {int(m.group(1))} if m.group(1) else {int(x) for x in re.findall(r"\d", m.group(2) or "")}
+            if not vals or vals & want or not vals & {(w + 1) for w in want}:
+                continue
+            names = {v: k for k, v in _TPCDS_DOW.items()}
+            used = ", ".join(f"{v} ({names.get(v, '?')})" for v in sorted(vals))
+            meant = ", ".join(f"{names[w]} is {w}" for w in sorted(want))
+            return [f"d_dow {used} selects the wrong weekday: TPCDS d_dow is 0=Sunday..6=Saturday, so {meant}. "
+                    f"Filter on d_day_name (e.g. d_day_name = '{names[min(want)]}') instead of a d_dow number"]
     return []
 
 
