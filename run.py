@@ -65,4 +65,12 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    rc = main()
+    if "jpype" in sys.modules:
+        # A one-shot CLI run against live Zetaris: the trace, memory and output are already written and every JDBC
+        # session closed, but the JVM's shutdown can wait forever on the driver's own non-daemon threads (seen on
+        # the Mac after a pooled run printed its answer). Exit without that wait.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(rc)
+    sys.exit(rc)
