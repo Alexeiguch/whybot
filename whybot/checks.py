@@ -514,7 +514,7 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
     problems += check_text_numbers("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
                                    evidence, allowed_qids, extra_values, strict_rates=version >= 2,
                                    day_lists=known_days(evidence, context) if version >= 4 else None,
-                                   plan_pcts=plan_thresholds(plan_text) if version >= 5 else None)
+                                   plan_pcts=plan_thresholds(plan_text) if version >= 5 else None, slash_days=version >= 7)
     if version >= 2:
         cmp = check_comparisons_v5 if version >= 5 else check_comparisons
         for i, c in enumerate(ans.claims):
@@ -557,7 +557,11 @@ _DAYS_AFTER = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_M
 _DAYS_BEFORE = re.compile(rf"(?P<rest>\b(?:{_DAY}{_LIST_SEP})+){_DAY}\s+(?P<m>{_MONTH})", re.I)
 
 
-def blank_day_lists(text: str, known_days: set[tuple[int, int]]) -> str:
+# v7: "Nov 7/14" or "2024-11-07/14": more days of the anchor's month after slashes
+_DAYS_SLASH = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_MONTH})\s+{_DAY}\b)(?P<rest>(?:\s*/\s*{_DAY}\b(?![-./]\d))+)", re.I)
+
+
+def blank_day_lists(text: str, known_days: set[tuple[int, int]], slash: bool = False) -> str:
     """Blank the bare day numbers of a date list when every date they form is known (in a query result, a note or the
     question). A list with any unknown date is left alone, so its numbers are still checked as figures."""
     def days_of(rest: str) -> list[int]:
@@ -578,6 +582,8 @@ def blank_day_lists(text: str, known_days: set[tuple[int, int]]) -> str:
             return " " * len(m.group("rest")) + m.group(0)[len(m.group("rest")):]
         return m.group(0)
 
+    if slash:
+        text = _DAYS_SLASH.sub(after, text)
     return _DAYS_BEFORE.sub(before, _DAYS_AFTER.sub(after, text))
 
 
@@ -592,7 +598,8 @@ def known_days(evidence: dict[str, Evidence], context: str = "") -> set[tuple[in
 
 
 def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: set[str], extra_values=(), strict_rates: bool = True,
-                       day_lists: set[tuple[int, int]] | None = None, plan_pcts: set[float] | None = None) -> list[str]:
+                       day_lists: set[tuple[int, int]] | None = None, plan_pcts: set[float] | None = None,
+                       slash_days: bool = False) -> list[str]:
     """Every number written in the final answer (headline, answer, claims, recommendation and caveats) must be backed
     by evidence. A % or Nx must be a derived value of a critic-supported claim (re-evaluated from its formula) or a
     cell of a percentage or ratio column of a query the answer may cite (allowed_qids), never an arbitrary cell that
@@ -617,7 +624,7 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
     if plan_pcts:
         text, problems = plan_threshold_mentions(text, plan_pcts, rate_pool)
     if day_lists is not None:
-        text = blank_day_lists(text, day_lists)
+        text = blank_day_lists(text, day_lists, slash=slash_days)
     text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
     for m in _NUM_RE.finditer(text):
         raw, suf = m.group(1), (m.group(2) or "").lower()
@@ -1119,6 +1126,16 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
                 aggs.append(sum(vals) / len(vals))
                 if len(vals) >= 3:
                     aggs += [(sum(vals) - v) / (len(vals) - 1) for v in vals]
+    by_day: dict[tuple[int, int], list[float]] = {}  # v7: (month, day) -> numeric cells of that date's cited rows
+    if version >= 7:
+        for q in sorted(qids):
+            ev = evidence.get(q)
+            if not ev or ev.status != "ok":
+                continue
+            for r in ev.rows:
+                days = {(int(mm.group(2)), int(mm.group(3))) for c in r for mm in [_ISO_CELL.match(str(c))] if mm}
+                for d in days:
+                    by_day.setdefault(d, []).extend(abs(x) for x in (_num(c) for c in r) if x is not None)
     blanked = _DATE_RE.sub(lambda m: " " * len(m.group(0)), text)
     problems = []
     for sent_m in re.finditer(r"[^.;!?\n]+(?:[.;!?](?!\d)|$)|[^\n]+", blanked):
@@ -1148,6 +1165,16 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
                 # 'baseline averages of 3.25 (Nov 7), 5.09 (Nov 14), 4.55 (Nov 21)': the label introduces the per-day values
                 # of the baseline rows, listed side by side, each a cell of the same column. A list, not a claimed aggregate.
                 continue
+            if version >= 7 and not re.search(r"aver|mean|avg|typical|usual|norm", label, re.I) and \
+                    _dated_cell(val, tol, text[base:base + m.start()], by_day):
+                # 'baseline Nov 21 had 39.9 mm', 'than on 21 Nov (39.9 mm), the highest baseline count': the number is that
+                # named day's own cell in the cited rows, one day of the baseline, not a claimed average
+                continue
+            if version >= 7 and re.search(r"\b(?:highest|lowest|peak|max(?:imum)?|min(?:imum)?|largest|smallest)\b",
+                                          re.split(r"[;.!?](?!\d)", text[base:base + m.start()][-40:])[-1], re.I) and \
+                    any(abs(val - f(col)) <= tol for col in columns for f in (max, min)):
+                # 'the highest baseline trips of 153,149': the extreme of a cited column, a single row by its own words
+                continue
             if version >= 7 and for_writer:
                 # the Writer cannot state a number no supported claim gives, so naming 'the nearest aggregate' (b95249: 2.93,
                 # 3.73) only led it to write an unbacked number on the next attempt
@@ -1162,6 +1189,17 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
                             f"(a single row's value or a wrong mean){hint}: declare the average in derived with a formula, "
                             f"or drop the label")
     return list(dict.fromkeys(problems))
+
+
+_ISO_CELL = re.compile(r"^(20\d\d)-(\d\d)-(\d\d)")
+def _dated_cell(val: float, tol: float, before: str, by_day) -> bool:
+    """The last date named in the 40 characters before the number (same clause) has a cited row with exactly this value."""
+    window = re.split(r"[;.!?](?!\d)", before[-40:])[-1]
+    hits = list(_DM_RE.finditer(window))
+    if not hits:
+        return False
+    md = next(iter(month_days(hits[-1].group(0))))
+    return any(abs(val - c) <= tol for c in by_day.get(md, ()))
 
 
 _LIST_GAP = re.compile(r"^(?:[\s,;:()&/]|and\b|or\b|mi\b|miles\b|km\b|mm\b|usd\b|trips\b|°c\b|c\b|\$)*$", re.I)
