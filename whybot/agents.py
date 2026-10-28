@@ -192,8 +192,13 @@ class Analyst:
             errs = []
             if not cs.claims:
                 errs.append("draft at least one claim")
+            by_hash = {e.sql_hash.lower(): e.qid for e in evidence}
             for c in cs.claims:
                 for cv in c.cited_values:
+                    if cv.qid not in ev_ids and self.version >= 7:
+                        # run v7e: the Analyst wrote Q3's sql_hash where its qid belongs, three rounds running (54 s). The
+                        # hash names exactly one query, so it is the same citation; the value is still checked against it.
+                        cv.qid = by_hash.get(cv.qid.strip().lower(), cv.qid)
                     if cv.qid not in ev_ids:
                         errs.append(f"{c.cid} cites unknown {cv.qid}")
             if errs or rounds["n"] >= 3:

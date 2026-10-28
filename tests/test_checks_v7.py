@@ -389,3 +389,20 @@ def test_iso_date_with_two_slash_days_is_a_date_list():
     out = blank_day_lists(text, known_days({"Q4": q}), slash=True)
     assert "26" not in out.replace("2024-11-25", "") and "104082/114424/107719" in out
     assert blank_day_lists("2024-11-25/26/29 were", known_days({"Q4": q}), slash=True) == "2024-11-25/26/29 were"
+
+
+def test_a_citation_by_sql_hash_is_the_same_query():
+    # run v7e: 'c0 cites unknown sha256:c4d48f5c297e8a78' three times (the hash of a real query sat in the qid field)
+    from whybot.agents import Analyst
+    claim = {"claims": [{"cid": "c0", "hypothesis_id": "H0", "statement": "Trips on 2024-11-28 were 77244", "direction": "supports",
+                         "cited_values": [{"qid": "sha256:Q2", "column": "trips", "value": 77244, "row_hint": "trip_date=2024-11-28"}]}]}
+    llm = FakeLLM({"analyst": [claim, claim, claim]})
+    cs, _ = Analyst(llm, version=7).draft("why?", "H0", list(EV.values()), "")
+    assert len(llm.calls) == 1 and cs.claims[0].cited_values[0].qid == "Q2"
+    wrong = {"claims": [{**claim["claims"][0], "cited_values": [{**claim["claims"][0]["cited_values"][0], "qid": "sha256:nope"}]}]}
+    llm2 = FakeLLM({"analyst": [wrong, wrong, wrong]})
+    try:
+        Analyst(llm2, version=7).draft("why?", "H0", list(EV.values()), "")
+    except Exception:
+        pass
+    assert len(llm2.calls) == 3  # an unknown hash is still rejected
