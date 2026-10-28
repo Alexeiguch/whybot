@@ -1176,6 +1176,11 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
                 # 'the highest baseline trips of 153,149': the extreme of a cited column, a single row by its own words
                 continue
             if version >= 7 and for_writer:
+                other = sorted(q for q, ev in evidence.items() if q not in qids and ev and ev.status == "ok" and
+                               any(abs(val - abs(x)) <= tol for r in ev.rows for x in (_num(c) for c in r) if x is not None))
+                if other:
+                    problems.append(f"'{shown}' comes from {', '.join(other)}, which no supported claim cites: leave it out")
+                    continue
                 # the Writer cannot state a number no supported claim gives, so naming 'the nearest aggregate' (b95249: 2.93,
                 # 3.73) only led it to write an unbacked number on the next attempt
                 problems.append(f"'{shown}' is labelled {label.split()[0].lower()!r} but is not the average of the cited rows "
@@ -1202,7 +1207,7 @@ def _dated_cell(val: float, tol: float, before: str, by_day) -> bool:
     return any(abs(val - c) <= tol for c in by_day.get(md, ()))
 
 
-_LIST_GAP = re.compile(r"^(?:[\s,;:()&/]|and\b|or\b|mi\b|miles\b|km\b|mm\b|usd\b|trips\b|°c\b|c\b|\$)*$", re.I)
+_LIST_GAP = re.compile(r"^(?:[\s,;:()&/\u2013\u2014-]|and\b|or\b|mi\b|miles\b|km\b|mm\b|usd\b|trips\b|°c\b|c\b|\$)*$", re.I)
 
 
 def _perrow_list(val: float, tol: float, pos: int, sent: str, sent_nums, columns) -> bool:
