@@ -357,3 +357,24 @@ def test_non_schema_zetaris_error_repairs_without_redescribing(settings, monkeyp
     assert q1["status"] == "ok" and len(q1["attempts"]) == 2
     acts = [json.loads(l)["action"] for l in (settings.logs_dir / f"{res['run_id']}.jsonl").read_text().splitlines()]
     assert "schema_introspect_for_repair" not in acts and "repair_without_reintrospection" in acts
+
+
+def test_analyst_stops_retrying_when_a_retry_makes_no_progress():
+    from whybot.agents import Analyst
+    bad = {"claims": [{"cid": "c2", "hypothesis_id": "H2", "statement": "21.8 mm on 2024-11-28 was higher than the baseline Thursdays",
+                       "direction": "supports",
+                       "cited_values": [{"qid": "Q3", "column": "prcp_mm", "value": v, "row_hint": f"trip_date={d}"}
+                                        for d, v in (("2024-11-28", 21.8), ("2024-11-07", 0.0), ("2024-11-21", 39.9))]}]}
+    llm = FakeLLM({"analyst": [bad, bad, bad]})
+    cs, _ = Analyst(llm, version=7).draft("why?", "H2 weather", list(EV.values()), "")
+    assert len(llm.calls) == 2  # v6 asked a third time for the same rejected sentence
+    llm6 = FakeLLM({"analyst": [bad, bad, bad]})
+    Analyst(llm6, version=6).draft("why?", "H2 weather", list(EV.values()), "")
+    assert len(llm6.calls) == 3
+
+
+def test_writer_sees_no_numbers_from_rejected_claims():
+    from whybot.orchestrator import mask_numbers
+    assert mask_numbers("Fare dropped 11.5% (under 15% threshold) on 2024-11-28 (Q5, H4)") == \
+        "Fare dropped [n]% (under [n]% threshold) on 2024-11-28 (Q5, H4)"
+    assert mask_numbers("baseline 21 Nov had 39.9 mm") == "baseline 21 Nov had [n] mm"

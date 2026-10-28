@@ -67,6 +67,25 @@ _SCHEMA_ERROR = re.compile(r"UNRESOLVED_COLUMN|UNRESOLVED_ROUTINE|TABLE_OR_VIEW_
                            r"not found|does not exist|no such (?:column|table)|unknown (?:column|table)|ambiguous", re.I)
 
 
+_MASK_KEEP = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b(?:Q|DQ|H|C|c|v)\d+\b|\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\b|"
+                        r"\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:\s*[/,]\s*\d{1,2})*\b|\b20\d\d\b")
+_MASK_NUM = re.compile(r"[-+−]?~?\$?\d[\d,]*(?:\.\d+)?")
+
+
+def mask_numbers(text: str) -> str:
+    """'Fare dropped 11.5% (under the 15% threshold)' -> 'Fare dropped [n]% (under the [n]% threshold)'. Dates, years and
+    ids (Q5, H4, v2) are kept."""
+    if not text:
+        return text
+    out, last = [], 0
+    for m in _MASK_KEEP.finditer(text):
+        out.append(_MASK_NUM.sub("[n]", text[last:m.start()]))
+        out.append(m.group(0))
+        last = m.end()
+    out.append(_MASK_NUM.sub("[n]", text[last:]))
+    return "".join(out)
+
+
 def result_ok(r) -> bool:
     return bool(r) and r.get("status") != "error"
 
@@ -679,6 +698,12 @@ class WhyBot:
         if not allowed:  # escalation with nothing supported: may cite any successful query as context
             allowed = {e.qid for e in evidence.values() if e.status == "ok" and not e.qid.startswith("DQ")}
         hstat = [h.model_dump() for h in (report.hypothesis_status if report else [])]
+        if self._checks_version >= 7:
+            # the Writer may not quote a number from a rejected claim, but it was shown them and copied one ('fare change
+            # of 11.5%' from a weak claim's verdict, run v7c: two rejected drafts, 43 s). It keeps the wording and dates
+            # it needs for the caveats; the numbers are masked.
+            rejected = [{**r, "statement": mask_numbers(r["statement"]), "reason": mask_numbers(r["reason"])} for r in rejected]
+            hstat = [{**h, "reason": mask_numbers(h.get("reason", ""))} if h.get("status") != "supported" else h for h in hstat]
         if dq_notes:
             hstat.append({"data_quality_notes (mention as caveats, NOT evidence)": list(dq_notes)})
 

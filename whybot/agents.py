@@ -184,7 +184,7 @@ class Analyst:
             user += "\n\nDATA-QUALITY NOTES (from the Critic's check; caveats, not evidence):\n" + "\n".join(f"- {n}" for n in dq_notes)
 
         ev_map = {e.qid: e for e in evidence}
-        rounds = {"n": 0}
+        rounds = {"n": 0, "prev": None}
 
         def validate(cs: ClaimSet) -> list[str]:
             from .checks import check_claim_numbers
@@ -201,6 +201,13 @@ class Analyst:
             for c in cs.claims:
                 ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version, plan_text=plan_text, dq_notes=dq_notes)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
+            if self.version >= 7:
+                # a retry that comes back with nothing but the problems it was already told about will not fix them on a
+                # third try either (run v7b: c2 rejected identically twice, 33 s); stop here and let the Critic's own
+                # number check reject those claims. Nothing is waived: the same checks run again there.
+                prev, rounds["prev"] = rounds["prev"], set(errs)
+                if errs and prev is not None and set(errs) <= prev:
+                    return []
             return errs
 
         system = self.SYSTEM
