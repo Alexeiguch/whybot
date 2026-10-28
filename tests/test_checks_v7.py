@@ -406,3 +406,97 @@ def test_a_citation_by_sql_hash_is_the_same_query():
     except Exception:
         pass
     assert len(llm2.calls) == 3  # an unknown hash is still rejected
+
+
+# run v7f's real Writer text (answered at 0.90, but not fit to show)
+V7F_ANSWER = ("On 2024-11-28, yellow taxi trips dropped to 77,244 from 130,018 on Nov 7, 141,642 on Nov 14, and 153,149 on Nov 21. "
+              "The -45.5% change versus the mean of those three Thursdays aligns with Thanksgiving Day falling on 2024-11-28, while "
+              "the other November Thursdays showed normal volume. No critic-supported claim in the evidence list validates "
+              "Thanksgiving as the cause; the holiday association is noted as contextual alignment only.")
+V7F_CLAIM2 = ("The mean baseline across the other three Thursdays is not quoted as a single number; per-day values are listed "
+              "instead")
+
+
+def test_writer_never_writes_about_its_own_process():
+    from whybot.checks import check_meta_text
+    assert any("critic" in p for p in check_meta_text([V7F_ANSWER]))
+    assert len(check_meta_text([V7F_CLAIM2])) == 2  # both halves of the sentence
+    assert check_meta_text(["The 45.5% drop is consistent with other holidays, as confirmed by the hypothesis H1 status."])
+    assert check_meta_text(["Trips fell 45.5% on Thanksgiving Day, 2024-11-28, driven by the national holiday.",
+                            "Data quality (not evidence): the TPCDS date_dim.d_holiday flag disagrees with Nager.Date on 3 date(s)."]) == []
+
+
+def test_hypothesis_ids_in_brackets_are_removed_not_rejected():
+    from whybot.checks import _drop_hypothesis_ids
+    from whybot.schemas import FinalAnswer
+    a = FinalAnswer(headline="h", answer="a", recommendation="r", confidence=0.9, claims=[],
+                    caveats=["Weather hypothesis (H2) is inconclusive: one baseline Thursday had more rain"])
+    _drop_hypothesis_ids(a)
+    assert a.caveats == ["Weather hypothesis is inconclusive: one baseline Thursday had more rain"]
+
+
+def test_a_supported_holiday_cause_is_stated_as_the_cause():
+    from whybot.checks import check_supported_holiday_named
+    sup = ["holiday: Thanksgiving (national holiday) on 2024-11-28 caused the drop in trips"]
+    assert check_supported_holiday_named(V7F_ANSWER, sup)
+    assert check_supported_holiday_named("Trips fell 45.5%, driven by Thanksgiving Day.", sup) == []
+    assert check_supported_holiday_named("Thanksgiving, a national holiday, drove the drop.", sup) == []
+    assert check_supported_holiday_named(V7F_ANSWER, ["other: Trips on 2024-11-28 were -45.5% vs the mean"]) == []
+
+
+def test_a_derived_value_over_text_cells_is_dropped_not_rejected():
+    # run v7f: c2 'Thanksgiving ... caused the drop' cited holiday_name cells with 'case when v1 is not null then 1 else 0
+    # end' and was rejected, so the supported holiday cause never reached the Writer
+    from whybot.checks import check_derived_values
+    from whybot.schemas import Claim
+    c = Claim(cid="c2", hypothesis_id="H1", statement="Thanksgiving (national holiday) on 2024-11-28 caused the drop in trips",
+              direction="supports",
+              cited_values=[{"qid": "Q6", "column": "holiday_name", "value": "Thanksgiving Day", "row_hint": "trip_date=2024-11-28"},
+                            {"qid": "Q6", "column": "holiday_name", "value": None, "row_hint": "trip_date=2024-11-07"}],
+              derived=[{"name": "holiday_present_target", "formula": "case when v1 is not null then 1 else 0 end"},
+                       {"name": "holiday_present_baseline", "formula": "avg(v2)"}])
+    assert check_derived_values(c, version=7) == [] and c.derived == []
+    base = c.model_dump()
+    assert check_derived_values(Claim(**{**base, "derived": [{"name": "x", "formula": "case when v1 is not null then 1 else 0 end"}]}),
+                                version=6)
+    bad = Claim(**{**base, "statement": "Trips fell 45.5% on Thanksgiving", "derived": []})
+    assert check_derived_values(bad, version=7)  # an unbacked percentage is still rejected
+
+
+def test_a_list_labelled_as_average_is_rejected_for_the_writer():
+    from whybot.checks import check_measure_wording
+    assert check_measure_wording("Trips fell to 77,244 on 2024-11-28 from an average of 130,018, 141,642 and 153,149 on the other Thursdays.")
+    assert check_measure_wording("Trips fell to 77,244 on 2024-11-28, 45.5% below an average of 141,603 on the other Thursdays.") == []
+
+
+V7F_Q2_A1 = ("WITH target AS (SELECT trip_date, trips FROM whybot.yellow_daily WHERE trip_date = DATE '2024-11-28'), baseline AS "
+             "(SELECT trip_date, trips FROM whybot.yellow_daily WHERE trip_date BETWEEN DATE '2024-11-01' AND DATE '2024-11-30' AND "
+             "trip_date <> DATE '2024-11-28'), holidays AS (SELECT holiday_date, holiday_name FROM whybot.us_holidays WHERE "
+             "holiday_date = DATE '2024-11-28') SELECT y.trip_date, y.trips AS target_trips, h.holiday_name, AVG(b.trips) AS "
+             "baseline_avg_trips, (y.trips - AVG(b.trips)) / AVG(b.trips) * 100 AS pct_change FROM target y CROSS JOIN holidays h "
+             "LEFT JOIN baseline b ON TRUE GROUP BY y.trip_date, y.trips, h.holiday_name ORDER BY y.trip_date LIMIT 1")
+V7F_Q2_A3 = ("SELECT y.trip_date, y.trips AS target_trips, h.holiday_name, AVG(CASE WHEN b.trip_date <> DATE '2024-11-28' THEN "
+             "b.trips END) AS baseline_avg_trips FROM whybot.yellow_daily y LEFT JOIN whybot.us_holidays h ON h.holiday_date = "
+             "y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE y.trip_date BETWEEN DATE '2024-11-01' AND "
+             "DATE '2024-11-30' GROUP BY y.trip_date, y.trips, h.holiday_name ORDER BY y.trip_date LIMIT 500")
+
+
+def test_self_join_of_a_cached_table_is_caught_before_it_runs():
+    # run v7f Q2 (and v7e Q7/Q8): [MISSING_ATTRIBUTES] tpep_pickup_datetime, every time
+    probs = sql_parse_problems(V7F_Q2_A1)
+    assert probs and "whybot.yellow_daily is read 2 times" in probs[0]
+    sub = ("SELECT y.trip_date, AVG(b.trips) AS a FROM whybot.yellow_daily y CROSS JOIN (SELECT trip_date, trips FROM "
+           "whybot.yellow_daily) b GROUP BY y.trip_date")
+    assert any("read 2 times" in p for p in sql_parse_problems(sub))
+    ok = ("SELECT y.trip_date, y.trips, h.holiday_name, d.d_day_name FROM whybot.yellow_daily y LEFT JOIN whybot.us_holidays h "
+          "ON h.holiday_date = y.trip_date JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date ORDER BY y.trip_date")
+    assert sql_parse_problems(ok) == []
+    cte = "WITH t AS (SELECT trip_date, trips FROM whybot.yellow_daily) SELECT t.trip_date, t.trips FROM t ORDER BY 1"
+    assert sql_parse_problems(cte) == []
+
+
+def test_undefined_alias_is_caught_before_it_runs():
+    # run v7f Q2 attempt 3: UNRESOLVED_COLUMN `b`.`trip_date`
+    probs = sql_parse_problems(V7F_Q2_A3)
+    assert any("alias b" in p for p in probs)
+    assert sql_parse_problems("SELECT x.trip_date FROM (SELECT trip_date FROM whybot.yellow_daily) x") == []

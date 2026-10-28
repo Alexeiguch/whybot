@@ -104,6 +104,10 @@ class SQLAgent:
             user += (" To filter a weekday use d_day_name (d_day_name = 'Thursday'), not a d_dow number: d_dow Thursday is 4 "
                      "and Friday is 5. Keep the target date itself in every comparison result (do not filter it out), and "
                      "return the date column so each row says which day it is.")
+        if self.version >= 7:
+            user += (" Read each whybot.* table at most once per query (no self-join, and no subquery or CTE over the same "
+                     "table joined back to it: Zetaris refuses those). For a baseline, return one row per day for the target "
+                     "and the baseline days together; the Analyst computes the average.")
         if failed:
             user += "\n\nPREVIOUS ATTEMPTS FAILED (repair the query):\n" + "\n".join(
                 f"SQL: {f['sql']}\nERROR: {f['error'][:700]}" for f in failed[-2:])
@@ -170,7 +174,13 @@ class Analyst:
         self.llm, self.version = llm, version
 
     SYSTEM_V7 = (" Amounts of money (avg_total_amount, fares) are higher or lower, never longer or shorter. Never write 'no "
-                 "data-quality flags' (or issues) when DATA-QUALITY NOTES are listed; leave data quality to the caveats.")
+                 "data-quality flags' (or issues) when DATA-QUALITY NOTES are listed; leave data quality to the caveats. "
+                 "State a baseline as ONE average that WhyBot computes: declare derived baseline_avg = avg(v2, v3, v4) over the "
+                 "cited baseline cells and write '{baseline_avg}' in the statement, e.g. 'Trips on <target date> were "
+                 "{pct_change_vs_baseline}% vs an average of {baseline_avg} on the other <weekday>s'. Never call a list of "
+                 "separate values an average. Derived values are arithmetic over numeric cells only: a holiday name is cited "
+                 "and stated in words ('2024-11-28 was Thanksgiving Day; the other Thursdays were not holidays'), with no "
+                 "derived value.")
 
     def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str, dq_notes=()) -> tuple[ClaimSet, dict]:
         ev_ids = {e.qid for e in evidence}
@@ -302,7 +312,11 @@ class Writer:
                  "and 4.55 mi'); never call a single day's value, or a number you worked out, the baseline or average. Money "
                  "amounts are higher or lower, never longer or shorter. Never write 'no data-quality flags/issues' when "
                  "DATA-QUALITY NOTES are listed: mention them in the caveats instead. The headline states the finding in one "
-                 "sentence; the answer adds the explanation without repeating the headline word for word.")
+                 "sentence; the answer adds the explanation without repeating the headline word for word. Write about the data, "
+                 "never about WhyBot's process: do not mention the critic, checks, claims, hypotheses (H1) or what is or is "
+                 "not quoted. When a supported claim of kind holiday says the holiday caused the change, state it as the "
+                 "cause ('driven by Thanksgiving Day'). Quote a baseline as one average when a supported claim gives it ('an "
+                 "average of 141,603'), never as a list of values called an average.")
 
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version

@@ -345,7 +345,16 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None, pla
     recomputed derived values (or a cited cell). Catches 'fell 49.5%' when the cells give 45.5%."""
     nums = [_num(cv.value) for cv in claim.cited_values]
     problems, ok_values = [], [abs(n) for n in nums if n is not None]
-    for d in claim.derived:
+    for d in list(claim.derived):
+        if version >= 7 and "{" + d.name + "}" not in claim.statement:
+            used = [int(i) for i in re.findall(r"\bv(\d+)\b", d.formula)]
+            if used and all(1 <= i <= len(nums) for i in used) and any(nums[i - 1] is None for i in used):
+                # run v7f: the Thanksgiving claim declared 'case when v1 is not null then 1 else 0 end' over holiday_name
+                # cells and was rejected, so the supported holiday cause never reached the Writer. A derived value over
+                # text/NULL cells states no number; it is dropped and adds nothing to the backed values. The statement's
+                # own numbers are still checked below.
+                claim.derived.remove(d)
+                continue
         try:
             actual = eval_formula(d.formula, nums)
         except ValueError as e:
@@ -488,6 +497,51 @@ _KIND_CAUSE = {"holiday": "holiday", "weather": "weather", "fare_mix": "trip mix
                "day_of_week": "day of week", "data_quality": "data quality"}
 
 
+# v7: sentences about WhyBot's own process, not the data (run v7f: "No critic-supported claim in the evidence list
+# validates Thanksgiving as the cause", "The mean baseline ... is not quoted as a single number; per-day values are
+# listed instead", v7e: "as confirmed by the hypothesis H1 status")
+_META = re.compile(r"\bcritic\w*|\b(?:automated|number|numeric) checks?\b|\b(?:the|WhyBot'?s?) checks\b|"
+                   r"\b(?:supported|unsupported|rejected|weak|approved|verified|listed|cited|evidence-backed) claims?\b|"
+                   r"\bthe claims?\b|\bevidence list\b|\b(?:is|are) not quoted\b|\bquoted as a single\b|\blisted instead\b|"
+                   r"\bhypothes[ie]s\s+H\d+\b|\bH\d+\b|\bhypothesis status\b", re.I)
+
+
+_HYP_PAREN = re.compile(r"\s*\((?:hypothesis\s+)?H\d+\)", re.I)
+
+
+def _drop_hypothesis_ids(ans) -> None:
+    """'Weather hypothesis (H2) is inconclusive' (run v7b): the id in brackets is internal; it is removed, not argued over."""
+    ans.headline, ans.answer, ans.recommendation = (_HYP_PAREN.sub("", x) for x in (ans.headline, ans.answer, ans.recommendation))
+    ans.caveats = [_HYP_PAREN.sub("", x) for x in ans.caveats]
+    for c in ans.claims:
+        c.text = _HYP_PAREN.sub("", c.text)
+
+
+def check_meta_text(texts) -> list[str]:
+    probs = []
+    for t in texts:
+        for sent in _SENT_SPLIT.split(t or ""):
+            m = _META.search(sent)
+            if m:
+                probs.append(f"\"{sent.strip()[:140]}\" talks about WhyBot's process ('{m.group(0)}'), not the data: write "
+                             f"only about the trips, days and causes; leave out the critic, checks, claims and hypothesis ids")
+    return probs
+
+
+def check_supported_holiday_named(text: str, supported_statements: list[str]) -> list[str]:
+    """v7: when a critic-supported holiday claim says the holiday caused the change, the headline or answer states it
+    as the cause (run v7f said 'aligns with Thanksgiving' and then that nothing validated it)."""
+    def causal_holiday(sent: str) -> bool:  # looser than named_causes: 'Thanksgiving, a national holiday, drove the drop'
+        return bool(_CAUSE_RE["holiday"].search(sent) and (_CAUSE_AFTER.search(sent) or _CAUSE_BEFORE.search(sent))
+                    and not _HEDGE.search(sent))
+    hol = [body for kind, _, body in ((s or "").partition(": ") for s in supported_statements)
+           if kind == "holiday" and causal_holiday(body)]
+    if hol and not any(causal_holiday(x) for x in _SENT_SPLIT.split(text or "")):
+        return [f"a supported claim gives the holiday as the cause (\"{hol[0][:120]}\"): state it as the cause in the "
+                f"headline or answer, e.g. 'driven by Thanksgiving Day'"]
+    return []
+
+
 def check_causes(text: str, supported_statements: list[str]) -> list[str]:
     """Every cause named in the headline or answer must be backed by a critic-supported claim that supports a
     hypothesis of that kind; otherwise the Writer must hedge it ("may have contributed") or drop it.
@@ -513,6 +567,8 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                    dq_notes=(), version: int = CHECKS_VERSION, supported_statements=None, plan_text: str = "") -> list[str]:
     """Writer contract: every claim has a citation whose qid, sql_hash and table match real, critic-approved evidence."""
     problems = []
+    if version >= 7:
+        _drop_hypothesis_ids(ans)
     if not ans.claims:
         problems.append("no claims")
     for i, c in enumerate(ans.claims):
@@ -551,6 +607,10 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
         problems += check_measure_wording("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation]))
     if version >= 3 and supported_statements is not None:
         problems += check_causes(ans.headline + ".\n" + ans.answer, list(supported_statements))
+        if version >= 7:
+            problems += check_supported_holiday_named(ans.headline + ".\n" + ans.answer, list(supported_statements))
+    if version >= 7:
+        problems += check_meta_text([ans.headline, ans.answer, ans.recommendation, *(c.text for c in ans.claims), *ans.caveats])
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
                                  evidence, context)
     prose = "\n".join([ans.headline, ans.answer, ans.recommendation, *(c.text for c in ans.claims)])
@@ -1312,10 +1372,56 @@ def sql_parse_problems(sql: str) -> list[str]:
         return [f"the SQL does not parse: {str(e).splitlines()[0][:200]}"]
     except Exception:
         return []
-    try:
-        return _group_by_problems(trees)
-    except Exception:
-        return []
+    probs = []
+    for f in (_alias_problems, _self_join_problems, _group_by_problems):
+        try:
+            probs += f(trees)
+        except Exception:
+            pass
+    return probs
+
+
+def _alias_problems(trees) -> list[str]:
+    """v7: a column qualified by an alias that no table, subquery or CTE in the query defines ([UNRESOLVED_COLUMN];
+    run v7f Q2 attempt 3: `b`.`trip_date` after the subquery b was dropped, 18 s on Zetaris for a certain error)."""
+    from sqlglot import exp
+    probs = []
+    for tree in trees:
+        if tree is None:
+            continue
+        names = {t.alias_or_name.lower() for t in tree.find_all(exp.Table)} | {t.name.lower() for t in tree.find_all(exp.Table)}
+        names |= {a.alias.lower() for a in tree.find_all(exp.Subquery, exp.CTE, exp.TableAlias) if getattr(a, "alias", "")}
+        names |= {a.name.lower() for a in tree.find_all(exp.TableAlias) if a.name}
+        bad = sorted({c.table for c in tree.find_all(exp.Column) if c.table and c.table.lower() not in names})
+        for q in bad:
+            probs.append(f"the alias {q} is used ({q}.column) but no table or subquery in the query is named {q}, so Zetaris "
+                         f"cannot resolve it ([UNRESOLVED_COLUMN]): use an alias defined in FROM/JOIN")
+    return probs
+
+
+# tables served from Zetaris's SchemaStore cache: Spark cannot join one of these with itself
+_CACHED_SCHEMA = "whybot"
+
+
+def _self_join_problems(trees) -> list[str]:
+    """v7: Zetaris refuses a query that reads the same cached whybot.* table twice (a self-join, or the table in a
+    subquery joined back to itself): [MISSING_ATTRIBUTES.RESOLVED_ATTRIBUTE_APPEAR_IN_OPERATION] 'tpep_pickup_datetime'.
+    Runs v7e (Q7, Q8) and v7f (Q2) sent 7 such drafts, all refused, about 20 s each; no self-join ever succeeded."""
+    from collections import Counter
+    from sqlglot import exp
+    probs = []
+    for tree in trees:
+        if tree is None:
+            continue
+        cte_names = {c.alias.lower() for c in tree.find_all(exp.CTE)}
+        seen = Counter(f"{t.db}.{t.name}".lower() for t in tree.find_all(exp.Table)
+                       if t.db and t.db.lower() == _CACHED_SCHEMA and t.name.lower() not in cte_names)
+        for tbl, n in sorted(seen.items()):
+            if n > 1:
+                probs.append(f"{tbl} is read {n} times in one query; Zetaris cannot join this cached table with itself "
+                             f"([MISSING_ATTRIBUTES]): read it once and return one row per day (target and baseline days "
+                             f"together; the Analyst computes the baseline average from the rows)")
+    return probs
 
 
 def _group_by_problems(trees) -> list[str]:
