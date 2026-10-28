@@ -24,3 +24,5 @@ logs/*
 !logs/samples/
 !logs/recorded-*.jsonl
 !logs/recorded-*.result.json
+# schema introspection cache (column lists only)
+.cache/

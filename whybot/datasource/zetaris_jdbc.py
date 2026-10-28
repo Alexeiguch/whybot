@@ -1,11 +1,12 @@
 """Zetaris Lightning over JDBC (jaydebeapi + the Zetaris driver JAR). The live, primary data source."""
 from __future__ import annotations
 
-import concurrent.futures as cf
+import json
 import os
 import queue
 import re
 import threading
+import time
 from pathlib import Path
 
 from .base import MAX_ROWS, DataSource, DataSourceError, QueryResult
@@ -166,11 +167,18 @@ class ZetarisJDBCSource(DataSource):
         if self._catalog is not None:
             return self._catalog
         out = []
-        if self.tables:  # explicit allowlist (incl. SchemaStore views such as whybot.yellow_daily): describe them side by side
-            with cf.ThreadPoolExecutor(max_workers=min(self.pool_size, len(self.tables))) as ex:
-                cols = list(ex.map(self._columns, self.tables))
-            out = [{"table": t, "columns": c, "note": ""} for t, c in zip(self.tables, cols)]
+        cached = self._cached_catalog()
+        if cached is not None:
+            self._catalog = cached
+            return cached
+        t0 = time.time()
+        if self.tables:  # explicit allowlist (incl. SchemaStore views such as whybot.yellow_daily)
+            # one after another on one session: describing the SchemaStore views from several fresh sessions at once made
+            # Zetaris report them as missing and stalled the next query (measured on the Mac)
+            for t in self.tables:
+                out.append({"table": t, "columns": self._columns(t), "note": ""})
             self._catalog = out
+            self._store_catalog(out, time.time() - t0)
             return out
         for db in self.databases:
             try:
@@ -188,7 +196,57 @@ class ZetarisJDBCSource(DataSource):
                     continue
                 out.append({"table": t, "columns": self._columns(t), "note": ""})
         self._catalog = out
+        self._store_catalog(out, time.time() - t0)
         return out
+
+    # Schema introspection is the slowest fixed cost of a run (about 17 s: Zetaris resolves each SchemaStore view to read
+    # its columns). Column lists are reused for ZETARIS_SCHEMA_TTL_S (default 30 min) in the process and on disk; queries
+    # and their rows are never cached, and a failing query still re-describes its tables live before the repair.
+    _MEM_CACHE: dict = {}
+
+    def _cache_key(self) -> str:
+        return "|".join([self.url, ",".join(sorted(t.lower() for t in self.tables)), ",".join(self.databases)])
+
+    def _cache_file(self) -> Path:
+        return Path(os.environ.get("WHYBOT_CACHE_DIR", str(Path(__file__).resolve().parents[2] / ".cache"))) / "zetaris_schema.json"
+
+    def _ttl(self) -> float:
+        try:
+            return float(os.environ.get("ZETARIS_SCHEMA_TTL_S", "1800"))
+        except ValueError:
+            return 1800.0
+
+    def _cached_catalog(self):
+        ttl, key = self._ttl(), self._cache_key()
+        self.catalog_info = {"source": "live", "age_s": 0.0}
+        if ttl <= 0:
+            return None
+        hit = self._MEM_CACHE.get(key)
+        if hit is None:
+            try:
+                data = json.loads(self._cache_file().read_text())
+                hit = data if data.get("key") == key else None
+            except Exception:
+                hit = None
+        if not hit or time.time() - hit["at"] > ttl or not hit.get("catalog") or any(not t.get("columns") for t in hit["catalog"]):
+            return None
+        self.catalog_info = {"source": "cache", "age_s": round(time.time() - hit["at"], 1), "live_cost_s": hit.get("cost_s")}
+        return hit["catalog"]
+
+    def _store_catalog(self, catalog, cost_s: float) -> None:
+        self.catalog_info = {"source": "live", "age_s": 0.0, "live_cost_s": round(cost_s, 1)}
+        if self._ttl() <= 0 or any(not t.get("columns") for t in catalog):
+            return
+        entry = {"key": self._cache_key(), "at": time.time(), "cost_s": round(cost_s, 1), "catalog": catalog}
+        self._MEM_CACHE[entry["key"]] = entry
+        try:
+            f = self._cache_file()
+            f.parent.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_suffix(".tmp")
+            tmp.write_text(json.dumps(entry))
+            tmp.replace(f)
+        except Exception:
+            pass
 
     def _columns(self, table: str) -> list[list[str]]:
         if not re.match(r"^[A-Za-z_]\w*\.[A-Za-z_]\w*$", table):

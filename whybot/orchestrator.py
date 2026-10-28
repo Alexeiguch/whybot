@@ -6,6 +6,7 @@ still fails marks its hypothesis untestable for that iteration (fallback) instea
 """
 from __future__ import annotations
 
+import concurrent.futures as cf
 import json
 import os
 import re
@@ -223,8 +224,11 @@ class WhyBot:
 
         catalog = ds.catalog()
         tables = [t["table"] for t in catalog]
-        tr.emit("Executor", "introspect_schema", output_summary=f"{len(catalog)} tables: {', '.join(tables)}",
-                data={"catalog": catalog})
+        info = getattr(ds, "catalog_info", None) or {"source": "live"}
+        how = (f" (column lists from the schema cache, {info.get('age_s')}s old; queries still run live)" if info.get("source") == "cache"
+               else "")
+        tr.emit("Executor", "introspect_schema", output_summary=f"{len(catalog)} tables: {', '.join(tables)}{how}",
+                data={"catalog": catalog, "schema_source": info})
 
         memory_text, mem_hits = self._recall(mem, question, tr)
         inv_entity = None
@@ -271,12 +275,35 @@ class WhyBot:
             plan_text = "\n".join(f"{h.id} [{h.kind}] {h.statement} | support if: {h.support_if} | refute if: {h.refute_if}"
                                   for h in hypotheses.values()) + f"\nMetric: {plan.metric}; target: {plan.target_window}; baseline: {plan.baseline_window}"
 
-            # ---- Execute (with repair + fallback)
+            # ---- Execute (with repair + fallback). The queries of one plan are independent, so on a live source with a
+            # session pool they (and the iteration-1 data-quality check) run side by side; qids stay in plan order.
+            specs = []
             for spec in plan.queries:
                 if time.time() > deadline:
                     break
                 qcount += 1
-                ev = self._execute(f"Q{qcount}", spec, it, question, catalog, tables, ds, sqlagent, memory_text, tr)
+                specs.append((f"Q{qcount}", spec))
+            run_dq = it == 1 and dq_notes is None
+            workers = self._parallelism(llm, ds)
+            dq_future, done = None, None
+            if workers > 1 and len(specs) + run_dq > 1:
+                tr.emit("Executor", "parallel_execution", status="info",
+                        output_summary=f"{len(specs)} queries{' + DQ1' if run_dq else ''} side by side on up to {workers} Zetaris sessions",
+                        data={"qids": [q for q, _ in specs], "workers": workers})
+                pool = cf.ThreadPoolExecutor(max_workers=workers, thread_name_prefix="whybot-q")
+                try:
+                    dq_ev: dict = {}
+                    if run_dq:
+                        dq_future = pool.submit(self._holiday_dq_check, question, plan, tables, ds, tr, dq_ev)
+                    futs = [pool.submit(self._execute, q, spec, it, question, catalog, tables, ds, sqlagent, memory_text, tr)
+                            for q, spec in specs]
+                    done = [f.result() for f in futs]
+                    if dq_future is not None:
+                        dq_notes = dq_future.result()
+                finally:
+                    pool.shutdown(wait=True)
+            for i, (q, spec) in enumerate(specs):
+                ev = done[i] if done is not None else self._execute(q, spec, it, question, catalog, tables, ds, sqlagent, memory_text, tr)
                 evidence[ev.qid] = ev
                 if ev.status == "ok" and mem and inv_entity:
                     fact = self._safe(tr, lambda: mem.assert_evidence(
@@ -289,7 +316,9 @@ class WhyBot:
                         tr.emit("Memory", "world_model.assert_fact", output_summary=f"{ev.qid} -> {fact['id']} (provenance: Executor, {ev.sql_hash}, {ev.primary_table})",
                                 data={"fact_id": fact["id"], "qid": ev.qid, "sql_hash": ev.sql_hash, "table": ev.primary_table})
 
-            if it == 1 and dq_notes is None:
+            if dq_future is not None:
+                evidence.update(dq_ev)  # after the queries, as in the serial order
+            elif run_dq:
                 dq_notes = self._holiday_dq_check(question, plan, tables, ds, tr, evidence)
 
             ok_ev = [e for e in evidence.values() if e.status == "ok" and not e.qid.startswith("DQ")]
@@ -304,7 +333,8 @@ class WhyBot:
             claims = None
             for a_try in (1, 2):  # one retry before giving up on this iteration's analysis
                 try:
-                    claims, meta = analyst.draft(question, plan_text, ok_ev, feedback)
+                    claims, meta = (analyst.draft(question, plan_text, ok_ev, feedback, dq_notes=dq_notes or ())
+                                    if self._checks_version >= 7 else analyst.draft(question, plan_text, ok_ev, feedback))
                     tr.emit("Analyst", "draft_claims", target_agent="Critic", output_summary=f"{len(claims.claims)} claims",
                             data={"claims": claims.model_dump()["claims"], "llm": meta})
                     break
@@ -321,10 +351,11 @@ class WhyBot:
             prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic
-            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version, plan_text=plan_text) for c in claims.claims}
+            checks = {c.cid: check_claim_numbers(c, evidence, question, version=self._checks_version, plan_text=plan_text, dq_notes=dq_notes or ())
+                      for c in claims.claims}
             if self._checks_version < CHECKS_VERSION:
                 for c in claims.claims:
-                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question, plan_text=plan_text).problems
+                    extra = [p for p in check_claim_numbers(c.model_copy(deep=True), evidence, question, plan_text=plan_text, dq_notes=dq_notes or ()).problems
                              if p not in checks[c.cid].problems]
                     self._note_shadow(f"iteration {it} {c.cid}", extra)
             for cid, ch in checks.items():
@@ -433,10 +464,11 @@ class WhyBot:
                     tr.emit("Executor", "sql_table_name_repaired", output_summary=f"{qid}: " + "; ".join(repairs), status="info",
                             retry_count=attempt, data={"qid": qid, "repairs": repairs})
             used = tables_in_sql(draft.sql, tables) or spec.tables
+            refused = False
             try:
                 draft.sql = guard_sql(draft.sql, allowed_tables=ds.allowed_tables())  # the exact SQL that runs is the SQL that is hashed and cited
             except DataSourceError:
-                pass  # ds.run() raises the same error below and the repair loop handles it
+                refused = True  # ds.run() raises the same error below and the repair loop handles it
             h = sql_hash(draft.sql)
             tr.emit("Executor", "sql_written", input_summary=spec.purpose, output_summary=draft.sql[:600], retry_count=attempt,
                     data={"qid": qid, "sql": draft.sql, "sql_hash": h, "tables": used, "llm": meta})
@@ -447,7 +479,12 @@ class WhyBot:
                 ev.attempts.append({"sql": draft.sql, "sql_hash": h, "error": str(e)[:500]})
                 tr.emit("Executor", "query_failed", output_summary=f"{qid}: {str(e)[:300]}", status="error", retry_count=attempt,
                         data={"qid": qid, "sql_hash": h, "error": str(e)[:800]})
-                if attempt < self.s.max_sql_repairs:
+                if attempt < self.s.max_sql_repairs and self._checks_version >= 7 and refused:
+                    # the query never reached Zetaris (our own parser or allowlist refused it): the schema is not the
+                    # problem, so skip the ~11 s re-describe and go straight to the repair
+                    tr.emit("Executor", "repair_without_reintrospection", target_agent="Executor", retry_count=attempt + 1, status="info",
+                            output_summary=f"{qid}: refused before reaching Zetaris; asking SQL agent to repair (schema unchanged)")
+                elif attempt < self.s.max_sql_repairs:
                     fresh = []
                     for t in used:
                         try:
@@ -483,6 +520,16 @@ class WhyBot:
         tr.emit("Executor", "fallback", output_summary=f"{qid} failed after {len(failed)} attempts; hypothesis {spec.hypothesis_id} untestable this iteration",
                 status="fallback", data={"qid": qid})
         return ev
+
+    def _parallelism(self, llm, ds) -> int:
+        """How many queries may run at once: only for live LLM calls against a live source with a session pool. A recorded
+        cassette replays responses per role in call order, so recording, replays and test fakes keep the serial order."""
+        from .llm import NvidiaLLM
+        if self._checks_version < 7 or os.environ.get("WHYBOT_PARALLEL", "1").lower() in ("0", "false", "no"):
+            return 1
+        if not isinstance(llm, NvidiaLLM) or self._cassette is not None or getattr(ds, "kind", "") != "live":
+            return 1
+        return max(1, int(getattr(ds, "concurrency", 1)))
 
     def _holiday_dq_check(self, question, plan, tables, ds, tr, evidence) -> list[str]:
         """Critic-owned deterministic data-quality check: TPCDS date_dim.d_holiday vs real Nager.Date holidays.
@@ -648,7 +695,9 @@ class WhyBot:
                 return []
             return probs
         try:
-            ans, meta = writer.write(question, status, supported, rejected, list(evidence.values()), hstat, validator)
+            ans, meta = (writer.write(question, status, supported, rejected, list(evidence.values()), hstat, validator, dq_notes=dq_notes)
+                         if self._checks_version >= 7 else
+                         writer.write(question, status, supported, rejected, list(evidence.values()), hstat, validator))
             ans = self._dq_caveat(ans, dq_notes)
             tr.emit("Writer", "final_answer", output_summary=ans.headline, confidence=ans.confidence,
                     data={"answer": ans.model_dump(), "llm": meta})
@@ -661,16 +710,49 @@ class WhyBot:
         supported = [c for c in supported if not check_consistency(c["statement"], evidence, question, dq_notes)]
         fc = [FinalClaim(text=c["statement"], citations=[Citation(qid=q, sql_hash=evidence[q].sql_hash, table=evidence[q].primary_table)
                                                           for q in sorted({cv["qid"] for cv in c["cited_values"]})]) for c in supported]
-        lead = supported[0]["statement"] if supported else ""
-        head = (lead[:160] if status == "answered" and lead else
-                ("Insufficient evidence" if status != "answered" else "Verified findings") + f" for: {question}")
-        ans = FinalAnswer(headline=head,
-                          answer=" ".join(c["statement"] for c in supported[:4]) or "No claim survived the Critic.",
-                          recommendation="Review the verified claims and evidence table.", claims=fc,
-                          caveats=["Writer fallback: deterministic rendering of verified claims"], confidence=0.3)
+        if self._checks_version >= 7:
+            ans = self._fallback_answer(question, status, supported, fc)
+        else:
+            lead = supported[0]["statement"] if supported else ""
+            head = (lead[:160] if status == "answered" and lead else
+                    ("Insufficient evidence" if status != "answered" else "Verified findings") + f" for: {question}")
+            ans = FinalAnswer(headline=head,
+                              answer=" ".join(c["statement"] for c in supported[:4]) or "No claim survived the Critic.",
+                              recommendation="Review the verified claims and evidence table.", claims=fc,
+                              caveats=["Writer fallback: deterministic rendering of verified claims"], confidence=0.3)
         ans = self._dq_caveat(drop_uncited(ans, evidence, allowed), dq_notes)
         tr.emit("Writer", "fallback_answer", output_summary=ans.headline, status="fallback")
         return ans
+
+    @staticmethod
+    def _sentence(text: str) -> str:
+        t = " ".join(str(text).split()).strip()
+        if not t:
+            return ""
+        t = t[0].upper() + t[1:]
+        return t if t[-1] in ".!?" else t + "."
+
+    def _fallback_answer(self, question, status, supported, fc) -> FinalAnswer:
+        """v7 fallback: the verified claim statements, verbatim (so every number stays checked), as readable sentences. The
+        H0 claim (the measured change) leads as the headline and is not repeated in the answer."""
+        lead_i = next((i for i, c in enumerate(supported) if c.get("hypothesis_id") == "H0"), 0)
+        lead = supported[lead_i]["statement"] if supported else ""
+        rest = [c for i, c in enumerate(supported) if i != lead_i]
+        if status == "answered" and lead:
+            head = self._sentence(lead).rstrip(".")
+            if len(head) > 200:
+                head = head[:200].rsplit(" ", 1)[0].rstrip(",;:") + "..."
+        else:
+            head = ("Insufficient evidence" if status != "answered" else "Verified findings") + f" for: {question}"
+        body = " ".join(self._sentence(c["statement"]) for c in rest[:5])
+        if not body:
+            body = "No claim survived the Critic." if not supported else "See the verified claims below."
+        n = len(supported)
+        return FinalAnswer(headline=head, answer=body,
+                           recommendation=(f"Read the {n} verified claim{'s' if n != 1 else ''} below with their cited queries; "
+                                           "the Writer's own summary failed its checks this time, so this text is the claims verbatim."),
+                           claims=fc, caveats=["Writer fallback: the verified claims are shown verbatim (the written summary did not pass the checks)"],
+                           confidence=0.3)
 
     def _remember(self, mem, tr, run_id, question, status, final: FinalAnswer, evidence, report):
         if not mem:
