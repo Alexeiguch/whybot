@@ -275,3 +275,85 @@ def test_undefined_formula_variable_names_the_cited_values():
     p = check_derived_values(c, version=7)[0]
     assert "v4 not defined" in p and "v1..v3" in p and "v2 = Q1.baseline_avg_trips 141603.0" in p
     assert "unsupported expression" in check_derived_values(c.model_copy(deep=True), version=6)[0]
+
+
+# ---- run mac-live-thanksgiving-v7b-20261028T195353Z: answered (0.92) in 251 s, but ~110 s went on avoidable retries
+
+V7B_C2 = ("Precipitation on 2024-11-28 (21.8 mm) was higher than baseline Thursday 2024-11-07 (0.0 mm) and 2024-11-14 "
+          "(0.0 mm), but lower than 2024-11-21 (39.9 mm)")
+
+
+def _claim(statement, cited):
+    return Claim.model_validate({"cid": "c2", "hypothesis_id": "H2", "statement": statement, "direction": "supports",
+                                 "cited_values": cited})
+
+
+def test_comparison_holds_for_the_days_its_own_clause_names():
+    # the Analyst named the days correctly and was rejected twice (33 s) because 21 Nov from the 'but lower' clause
+    # was counted as one of the 'higher than' days; the weather fact then never reached the answer
+    cited = [{"qid": "Q3", "column": "prcp_mm", "value": v, "row_hint": f"trip_date={d}"}
+             for d, v in (("2024-11-28", 21.8), ("2024-11-07", 0.0), ("2024-11-14", 0.0), ("2024-11-21", 39.9))]
+    assert check_claim_numbers(_claim(V7B_C2, cited), EV, version=7).problems == []
+    # still rejected when the clause itself is wrong
+    wrong = V7B_C2.replace("2024-11-14 (0.0 mm), but lower than 2024-11-21 (39.9 mm)", "2024-11-21 (39.9 mm)")
+    assert any("does not hold" in p for p in check_claim_numbers(_claim(wrong, cited), EV, version=7).problems)
+    assert any("does not hold" in p for p in check_claim_numbers(_claim("21.8 mm on 2024-11-28 was higher than the "
+                                                                         "baseline Thursdays", cited), EV, version=7).problems)
+
+
+def test_plural_weekday_in_a_claim_that_cites_no_rows():
+    c = _claim("Fare and distance on 2024-11-28 versus baseline Thursdays were not queried", [])
+    assert not any("weekday" in p for p in check_claim_numbers(c, EV, version=7).problems)
+
+
+def test_a_list_of_days_is_not_an_average():
+    probs = check_measure_wording("Trips fell to 77,244 on 2024-11-28 from an average of 130,018, 141,642 and 153,149 "
+                                  "on the other three Thursdays")
+    assert probs and "130,018, 141,642 and 153,149" in probs[0]
+    assert check_measure_wording("Trips fell to 77,244 from 130,018, 141,642 and 153,149 on the other three Thursdays, "
+                                 "an average of 141,603") == []
+
+
+V7B_Q5 = ("SELECT y.trip_date, y.avg_total_amount AS target_avg_total_amount, AVG(CASE WHEN d.d_day_name = 'Thursday' AND "
+          "y.trip_date <> DATE '2024-11-28' THEN y.avg_total_amount END) AS baseline_avg_total_amount FROM whybot.yellow_daily y "
+          "JOIN TPCDS_DB.date_dim d ON d.d_date = y.trip_date WHERE d.d_day_name = 'Thursday' GROUP BY y.trip_date ORDER BY y.trip_date")
+
+
+def test_missing_aggregation_is_caught_before_it_runs():
+    probs = sql_parse_problems(V7B_Q5)
+    assert probs and "y.avg_total_amount" in probs[0] and "GROUP BY" in probs[0]
+    ok = [V7B_Q5.replace("y.avg_total_amount AS target", "MAX(y.avg_total_amount) AS target"),
+          "SELECT y.trip_date, d.d_day_name, MAX(y.trips) AS t FROM whybot.yellow_daily y JOIN TPCDS_DB.date_dim d "
+          "ON d.d_date = y.trip_date GROUP BY y.trip_date, d.d_day_name",
+          "SELECT d.d_day_name AS dn, COUNT(*) AS n FROM TPCDS_DB.date_dim d GROUP BY dn",
+          "SELECT y.trip_date, y.trips FROM whybot.yellow_daily y ORDER BY 1",
+          "SELECT y.trip_date, y.trips, AVG(y.trips) OVER () AS a FROM whybot.yellow_daily y"]
+    for sql in ok:
+        assert sql_parse_problems(sql) == [], sql
+
+
+def test_non_schema_zetaris_error_repairs_without_redescribing(settings, monkeypatch):
+    from whybot.datasource.base import DataSourceError
+    monkeypatch.setattr("whybot.agents.sql_parse_problems", lambda sql: [])
+    bad = {"sql": "SELECT trip_date, COUNT(*) AS trips FROM NY_TAXI.yellow_tripdata GROUP BY 1 /* bad */",
+           "tables_used": ["NY_TAXI.yellow_tripdata"]}
+    good = {"sql": SQL_TRIPS, "tables_used": ["NY_TAXI.yellow_tripdata"]}
+    plan = {**PLAN, "queries": [PLAN["queries"][0]]}
+    claims = {"claims": [{"cid": "C1", "hypothesis_id": "H0", "statement": "13 Feb had 69067 trips vs 102152", "direction": "supports",
+                          "cited_values": [{"qid": "Q1", "column": "trips", "value": 69067, "row_hint": "trip_date=2024-02-13"}]}]}
+    critic = {"verdicts": [{"cid": "C1", "verdict": "supported", "strength": 0.9, "reason": "ok"}],
+              "hypothesis_status": [{"hypothesis_id": "H0", "status": "supported", "reason": "r"}],
+              "decision": "accept", "feedback": "", "follow_up_queries": []}
+    h1 = sql_hash(SQL_TRIPS + " LIMIT 500")
+    writer = {"headline": "Trips fell", "answer": "a", "recommendation": "r", "confidence": 0.8,
+              "claims": [{"text": "t", "citations": [{"qid": "Q1", "sql_hash": h1, "table": "NY_TAXI.yellow_tripdata"}]}],
+              "caveats": [], "lessons": []}
+    llm = FakeLLM({"planner": [plan], "sql": [bad, good, good], "analyst": [claims], "critic": [critic], "writer": [writer]})
+    err = DataSourceError("[MISSING_AGGREGATION] The non-aggregating expression \"trips\" is based on columns which are not "
+                          "participating in the GROUP BY clause.")
+    src = FakeSource([("/* bad */", err), ("select trip_date", QR(["trip_date", "trips"], [["2024-02-06", 102152], ["2024-02-13", 69067]]))])
+    res = WhyBot(settings, llm=llm, datasource=src, use_meterless=False, echo=False).run("why?")
+    q1 = next(e for e in res["evidence"] if e["qid"] == "Q1")
+    assert q1["status"] == "ok" and len(q1["attempts"]) == 2
+    acts = [json.loads(l)["action"] for l in (settings.logs_dir / f"{res['run_id']}.jsonl").read_text().splitlines()]
+    assert "schema_introspect_for_repair" not in acts and "repair_without_reintrospection" in acts

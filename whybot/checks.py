@@ -131,7 +131,7 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
     problems += check_derived_values(claim, corrections, plan_thresholds(plan_text) if version >= 5 else None, version=version)
     problems += check_weather_wording(claim.statement, evidence, context)
     if version >= 5:
-        problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
+        problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values}, version=version)
     elif version >= 2:
         problems += check_comparisons(claim.statement, evidence, {cv.qid for cv in claim.cited_values})
     if version >= 5:
@@ -236,7 +236,8 @@ def check_claim_dates(claim: Claim, evidence: dict[str, Evidence]) -> list[str]:
         for m in _WEEKDAY_RE.finditer(claim.statement):
             w = m.group(1).title()
             plural = bool(m.group(2))
-            ok = w in weekdays if plural else (w in weekdays or w in named)
+            # a claim citing no rows ('fare data for the Thursdays was not queried') has only the dates it names
+            ok = (w in weekdays or (not rows and w in named)) if plural else (w in weekdays or w in named)
             if not ok:
                 actual = ", ".join(sorted(weekdays | named, key=_WEEKDAYS.index))
                 problems.append(f"the claim says {m.group(0)!r} but its cited rows and dates fall on {actual}: "
@@ -528,7 +529,11 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
                                    day_lists=known_days(evidence, context) if version >= 4 else None,
                                    plan_pcts=plan_thresholds(plan_text) if version >= 5 else None, slash_days=version >= 7)
     if version >= 2:
-        cmp = check_comparisons_v5 if version >= 5 else check_comparisons
+        if version >= 5:
+            def cmp(t, e, q):
+                return check_comparisons_v5(t, e, q, version=version)
+        else:
+            cmp = check_comparisons
         for i, c in enumerate(ans.claims):
             problems += [f"claim {i + 1}: {p}" for p in cmp(c.text, evidence, {x.qid for x in c.citations})]
         problems += cmp("\n".join([ans.headline, ans.answer]), evidence, allowed_qids)
@@ -1260,7 +1265,16 @@ def check_measure_wording(text: str) -> list[str]:
             word = m.group(1).lower()
             problems.append(f"'{word} {nxt.group(1)}': a money amount is {'higher' if word == 'longer' else 'lower'}, not {word}; "
                             f"use higher/lower for amounts and keep longer/shorter for distances and durations")
+    for m in _AVG_OF_LIST.finditer(text):
+        problems.append(f"'{m.group(0).strip()}' calls a list of separate values an average: write 'from "
+                        f"{m.group('list').strip()} on ...' (the per-day values), or quote the cited average itself")
     return list(dict.fromkeys(problems))
+
+
+_LISTNUM = r"\d[\d,]*(?:\.\d+)?"
+# 'fell to 77,244 from an average of 130,018, 141,642 and 153,149' (run v7b): three days are not one average
+_AVG_OF_LIST = re.compile(rf"\b(?:an?|the|their)\s+(?:average|mean)\s+(?:baseline\s+)?of\s+(?P<list>{_LISTNUM}(?:\s*\([^)]{{0,30}}\))?"
+                          rf"(?:\s*,\s*{_LISTNUM}(?:\s*\([^)]{{0,30}}\))?)*\s*,?\s+and\s+{_LISTNUM})", re.I)
 
 
 def sql_parse_problems(sql: str) -> list[str]:
@@ -1288,12 +1302,47 @@ def sql_parse_problems(sql: str) -> list[str]:
     try:
         import sqlglot
         from sqlglot.errors import SqlglotError
-        sqlglot.parse(sql, read="spark")
+        trees = sqlglot.parse(sql, read="spark")
     except SqlglotError as e:
         return [f"the SQL does not parse: {str(e).splitlines()[0][:200]}"]
     except Exception:
         return []
-    return []
+    try:
+        return _group_by_problems(trees)
+    except Exception:
+        return []
+
+
+def _group_by_problems(trees) -> list[str]:
+    """v7: Spark refuses a SELECT item that is neither aggregated nor in the GROUP BY ([MISSING_AGGREGATION]). Run v7b
+    Q5 sent three such drafts to Zetaris (~15 s each, plus a schema re-describe each time) before giving up; this
+    catches them before they run. Conservative: only items with no aggregate or window at all are checked, against the
+    GROUP BY's column names, and ordinal or expression-only GROUP BYs are left to Zetaris."""
+    from sqlglot import exp
+    problems = []
+    for tree in trees:
+        if tree is None:
+            continue
+        for sel in tree.find_all(exp.Select):
+            group = sel.args.get("group")
+            if not group or not group.expressions:
+                continue
+            if any(not isinstance(g, exp.Column) for g in group.expressions):
+                continue
+            names = {g.name.lower() for g in group.expressions}
+            gsql = ", ".join(g.sql(dialect="spark") for g in group.expressions)
+            for proj in sel.expressions:
+                if proj.find(exp.AggFunc) or proj.find(exp.Window) or proj.find(exp.Subquery):
+                    continue
+                if isinstance(proj, exp.Alias) and proj.alias.lower() in names:
+                    continue
+                bad = [c for c in proj.find_all(exp.Column) if c.name.lower() not in names]
+                if bad:
+                    c = bad[0].sql(dialect="spark")
+                    problems.append(f"{c} is neither aggregated nor in GROUP BY {gsql}, so Zetaris refuses it ([MISSING_AGGREGATION]): "
+                                    f"drop the GROUP BY and the aggregates and return one row per day (the Analyst compares "
+                                    f"the rows), or wrap {c} in MAX(...)")
+    return list(dict.fromkeys(problems))
 
 
 # ---- v5: comparison scope --------------------------------------------------------------------------------------------------
@@ -1333,7 +1382,10 @@ def _compared_rows(rows, t, vals, named_days):
     return [(r, v) for _, r, v in others]
 
 
-def check_comparisons_v5(text: str, evidence: dict[str, Evidence], qids: set[str]) -> list[str]:
+_CLAUSE_END = re.compile(r",?\s+(?:but|while|whereas|although|though|yet)\b|;", re.I)
+
+
+def check_comparisons_v5(text: str, evidence: dict[str, Evidence], qids: set[str], version: int = CHECKS_VERSION) -> list[str]:
     """'X was higher than (on) the comparison Saturdays' must hold for every compared row of the cited column, not just
     on average: the row holding the stated value must be above every other row (below, for 'lower than'). Wording that
     says 'on average' (or compares with the mean) is checked against the mean of the other rows instead. The
@@ -1362,7 +1414,14 @@ def check_comparisons_v5(text: str, evidence: dict[str, Evidence], qids: set[str
                     if len(targets) != 1:
                         continue
                     t = targets[0]
-                    others = _compared_rows(ev.rows, t, vals, month_days(sent) - days)
+                    if version >= 7:
+                        # 'higher than baseline 2024-11-07 (0.0) and 2024-11-14 (0.0), but lower than 2024-11-21 (39.9)'
+                        # compares with the days of its own clause, not every day the sentence names (run v7b c2)
+                        end = _CLAUSE_END.search(sent, m.end())
+                        scope_days = month_days(sent[m.start():end.start() if end else len(sent)]) - days
+                    else:
+                        scope_days = month_days(sent) - days
+                    others = _compared_rows(ev.rows, t, vals, scope_days)
                     if not others:
                         continue
                     phrase = m.group(0) if len(m.group(0)) < 90 else f"{m.group('dir')} ... than {m.group('set')}"

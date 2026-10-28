@@ -62,6 +62,11 @@ def parse_dates(text: str) -> list:
 WRITER_RESERVE_S = 150  # stop iterating early enough for the Writer to finish inside the run budget
 
 
+# Zetaris/Spark errors that mean the catalog the SQL agent saw may be wrong, so a re-describe can help
+_SCHEMA_ERROR = re.compile(r"UNRESOLVED_COLUMN|UNRESOLVED_ROUTINE|TABLE_OR_VIEW_NOT_FOUND|SCHEMA_NOT_FOUND|cannot resolve|"
+                           r"not found|does not exist|no such (?:column|table)|unknown (?:column|table)|ambiguous", re.I)
+
+
 def result_ok(r) -> bool:
     return bool(r) and r.get("status") != "error"
 
@@ -479,11 +484,13 @@ class WhyBot:
                 ev.attempts.append({"sql": draft.sql, "sql_hash": h, "error": str(e)[:500]})
                 tr.emit("Executor", "query_failed", output_summary=f"{qid}: {str(e)[:300]}", status="error", retry_count=attempt,
                         data={"qid": qid, "sql_hash": h, "error": str(e)[:800]})
-                if attempt < self.s.max_sql_repairs and self._checks_version >= 7 and refused:
-                    # the query never reached Zetaris (our own parser or allowlist refused it): the schema is not the
-                    # problem, so skip the ~11 s re-describe and go straight to the repair
+                if attempt < self.s.max_sql_repairs and self._checks_version >= 7 and (refused or not _SCHEMA_ERROR.search(str(e))):
+                    # the query never reached Zetaris (our own parser or allowlist refused it), or Zetaris refused it for
+                    # a reason that is not a missing table or column ([MISSING_AGGREGATION] in run v7b): the schema is not
+                    # the problem, so skip the ~13 s re-describe and go straight to the repair
+                    why = "refused before reaching Zetaris" if refused else "not a schema error"
                     tr.emit("Executor", "repair_without_reintrospection", target_agent="Executor", retry_count=attempt + 1, status="info",
-                            output_summary=f"{qid}: refused before reaching Zetaris; asking SQL agent to repair (schema unchanged)")
+                            output_summary=f"{qid}: {why}; asking SQL agent to repair (schema unchanged)")
                 elif attempt < self.s.max_sql_repairs:
                     fresh = []
                     for t in used:
