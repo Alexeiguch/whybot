@@ -235,19 +235,19 @@ def test_guard_refusal_repairs_without_redescribing(settings, monkeypatch):
 
 
 def test_schema_cache_reuses_column_lists_within_ttl(tmp_path, monkeypatch):
-    from whybot.datasource.zetaris_jdbc import ZetarisJDBC
+    from whybot.datasource.zetaris_jdbc import ZetarisJDBCSource
     monkeypatch.setenv("WHYBOT_CACHE_DIR", str(tmp_path))
-    ZetarisJDBC._MEM_CACHE.clear()
+    ZetarisJDBCSource._MEM_CACHE.clear()
 
     def src():
-        z = ZetarisJDBC.__new__(ZetarisJDBC)
+        z = ZetarisJDBCSource.__new__(ZetarisJDBCSource)
         z.url, z.tables, z.databases = "jdbc:zetaris:x", ["whybot.yellow_daily"], ["TPCDS_DB"]
         return z
     cat = [{"table": "whybot.yellow_daily", "columns": [["trip_date", "DATE"], ["trips", "BIGINT"]], "note": ""}]
     a = src()
     assert a._cached_catalog() is None and a.catalog_info["source"] == "live"
     a._store_catalog(cat, 17.2)
-    ZetarisJDBC._MEM_CACHE.clear()  # a new process reads the file
+    ZetarisJDBCSource._MEM_CACHE.clear()  # a new process reads the file
     b = src()
     assert b._cached_catalog() == cat and b.catalog_info["source"] == "cache" and b.catalog_info["live_cost_s"] == 17.2
     monkeypatch.setenv("ZETARIS_SCHEMA_TTL_S", "0")
@@ -257,7 +257,7 @@ def test_schema_cache_reuses_column_lists_within_ttl(tmp_path, monkeypatch):
     c.tables = ["whybot.yellow_daily", "whybot.nyc_weather_daily"]  # another allowlist is another key
     assert c._cached_catalog() is None
     # an empty column list (a failed describe) is never cached
-    ZetarisJDBC._MEM_CACHE.clear()
+    ZetarisJDBCSource._MEM_CACHE.clear()
     (tmp_path / "zetaris_schema.json").unlink()
     src()._store_catalog([{"table": "whybot.yellow_daily", "columns": [], "note": ""}], 1.0)
     assert not (tmp_path / "zetaris_schema.json").exists()
