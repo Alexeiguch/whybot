@@ -200,8 +200,9 @@ class ZetarisJDBCSource(DataSource):
         return out
 
     # Schema introspection is the slowest fixed cost of a run (about 17 s: Zetaris resolves each SchemaStore view to read
-    # its columns). Column lists are reused for ZETARIS_SCHEMA_TTL_S (default 30 min) in the process and on disk; queries
-    # and their rows are never cached, and a failing query still re-describes its tables live before the repair.
+    # its columns). Column lists are reused for ZETARIS_SCHEMA_TTL_S (default 6 h, about one recording session) in the
+    # process and on disk; queries and their rows are never cached, and a query failing on a missing table or column
+    # still re-describes its tables live before the repair.
     _MEM_CACHE: dict = {}
 
     def _cache_key(self) -> str:
@@ -212,7 +213,7 @@ class ZetarisJDBCSource(DataSource):
 
     def _ttl(self) -> float:
         try:
-            return float(os.environ.get("ZETARIS_SCHEMA_TTL_S", "1800"))
+            return float(os.environ.get("ZETARIS_SCHEMA_TTL_S", "21600"))
         except ValueError:
             return 1800.0
 

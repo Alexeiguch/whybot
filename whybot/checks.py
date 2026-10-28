@@ -575,7 +575,7 @@ _DAYS_BEFORE = re.compile(rf"(?P<rest>\b(?:{_DAY}{_LIST_SEP})+){_DAY}\s+(?P<m>{_
 
 
 # v7: "Nov 7/14" or "2024-11-07/14": more days of the anchor's month after slashes
-_DAYS_SLASH = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_MONTH})\s+{_DAY}\b)(?P<rest>(?:\s*/\s*{_DAY}\b(?![-./]\d))+)", re.I)
+_DAYS_SLASH = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_MONTH})\s+{_DAY}\b)(?P<rest>(?:\s*/\s*{_DAY}\b)+)(?![-./]\d)", re.I)
 
 
 def blank_day_lists(text: str, known_days: set[tuple[int, int]], slash: bool = False) -> str:

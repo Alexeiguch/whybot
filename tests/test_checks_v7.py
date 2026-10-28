@@ -378,3 +378,14 @@ def test_writer_sees_no_numbers_from_rejected_claims():
     assert mask_numbers("Fare dropped 11.5% (under 15% threshold) on 2024-11-28 (Q5, H4)") == \
         "Fare dropped [n]% (under [n]% threshold) on 2024-11-28 (Q5, H4)"
     assert mask_numbers("baseline 21 Nov had 39.9 mm") == "baseline 21 Nov had [n] mm"
+
+
+def test_iso_date_with_two_slash_days_is_a_date_list():
+    # run v7d: the Writer copied 'Mon-Wed trips 2024-11-25/26/27 were 104082/114424/107719' from a supported claim and
+    # was rejected three times for '26' and '27' (fallback, confidence 0.30)
+    from whybot.checks import known_days
+    q = _ev("Q4", ["trip_date", "trips"], [["2024-11-25", 104082], ["2024-11-26", 114424], ["2024-11-27", 107719]])
+    text = "Mon-Wed trips 2024-11-25/26/27 were 104082/114424/107719"
+    out = blank_day_lists(text, known_days({"Q4": q}), slash=True)
+    assert "26" not in out.replace("2024-11-25", "") and "104082/114424/107719" in out
+    assert blank_day_lists("2024-11-25/26/29 were", known_days({"Q4": q}), slash=True) == "2024-11-25/26/29 were"
