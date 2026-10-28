@@ -30,7 +30,7 @@ from .schemas import Claim, CriticReport, FinalAnswer
 #      a claim about the 28th); a weekday it names ('the other Saturdays', 'baseline Thursdays') must be the weekday of a
 #      cited row; a d_dow filter that is off by one against the question's weekday (Spark dayofweek() numbering used on
 #      TPCDS d_dow) is refused; month names are whole words, so 'marked' or 'declined' never read as March or December
-CHECKS_VERSION = 6
+CHECKS_VERSION = 7
 
 
 def _num(v):
@@ -89,7 +89,7 @@ class NumericCheck:
 
 
 def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: str = "", version: int = CHECKS_VERSION,
-                        plan_text: str = "") -> NumericCheck:
+                        plan_text: str = "", dq_notes=()) -> NumericCheck:
     """Every cited value must appear in the named column of the named, successful query result, and benign weather
     wording must not describe a day the weather evidence shows as wet or snowy. ('No data-quality flags' is checked on
     the final answer, where the run's data-quality caveat is rendered.)"""
@@ -137,9 +137,14 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
     if version >= 5:
         qids = {cv.qid for cv in claim.cited_values}
         problems += check_units(claim.statement, evidence, qids)
-        problems += check_aggregate_labels(claim.statement, evidence, qids, [d.value for d in claim.derived])
+        problems += check_aggregate_labels(claim.statement, evidence, qids, [d.value for d in claim.derived], version=version)
     if version >= 6:
         problems += check_claim_dates(claim, evidence)
+    if version >= 7:
+        # a claim saying 'no data-quality flags' while the run raised some was copied by the Writer and rejected there on
+        # every attempt (run b95249): catch it where it is written
+        problems += check_dq_consistency(claim.statement, dq_notes)
+        problems += check_measure_wording(claim.statement)
     return NumericCheck(claim.cid, not problems, problems, corrections)
 
 
@@ -519,7 +524,9 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
         problems += check_units("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation, *ans.caveats]),
                                 evidence, allowed_qids)
         problems += check_aggregate_labels("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation]),
-                                           evidence, allowed_qids, extra_values)
+                                           evidence, allowed_qids, extra_values, version=version, for_writer=True)
+    if version >= 7:
+        problems += check_measure_wording("\n".join([ans.headline, ans.answer, *(c.text for c in ans.claims), ans.recommendation]))
     if version >= 3 and supported_statements is not None:
         problems += check_causes(ans.headline + ".\n" + ans.answer, list(supported_statements))
     problems += check_text_dates("\n".join([ans.headline, ans.answer, ans.recommendation, *ans.caveats, *(c.text for c in ans.claims)]),
@@ -1083,13 +1090,15 @@ def _stated_tolerance(raw: str, suffix: str) -> float:
     return t * 1000 if suffix == "k" else t
 
 
-def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[str], derived=()) -> list[str]:
+def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[str], derived=(), version: int = CHECKS_VERSION,
+                           for_writer: bool = False) -> list[str]:
     """A number labelled average, mean or baseline ('baseline average of 141,642', '~4.3 miles baseline') must equal, to its
     stated precision, an aggregate of the cited rows: the mean of a numeric column over all rows or all rows but one (the
     target day), a verified derived value, or the single value of a column that is itself an aggregate (a one-value
     baseline_avg_trips; for a plain 'average' also a per-row avg_ column). Appearing somewhere in the results is not enough: 141,642 is one
     Thursday's count, not the mean of the three."""
     aggs, agg_cells, perrow_cells = [abs(float(d)) for d in derived if d is not None], [], []
+    columns: list[list[float]] = []  # v7: every cited numeric column, row by row (to recognise lists of per-day values)
     for q in sorted(qids):
         ev = evidence.get(q)
         if not ev or ev.status != "ok":
@@ -1099,6 +1108,7 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
             vals = [v for v in vals if v is not None]
             if not vals:
                 continue
+            columns.append([abs(v) for v in vals])
             # an aggregate-named column is an aggregate only when it holds one value; per-day values in a column the SQL
             # agent named baseline_avg_trips are still single days
             if _AGG_COL.search(c) and not _PERROW_COL.search(c) and len(set(vals)) == 1:
@@ -1114,6 +1124,7 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
     for sent_m in re.finditer(r"[^.;!?\n]+(?:[.;!?](?!\d)|$)|[^\n]+", blanked):
         sent, base = sent_m.group(0), sent_m.start()
         prev_end = 0
+        sent_nums = [(m.group(1), (m.group(2) or "").lower(), m.start(), m.end()) for m in _NUM_RE.finditer(sent)]
         for m in _NUM_RE.finditer(sent):
             raw, suf = m.group(1), (m.group(2) or "").lower()
             before, after = sent[prev_end:m.start()], sent[m.end():]
@@ -1132,13 +1143,102 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
             pool = aggs + agg_cells + ([] if _CROSS_ROW.search(label) else perrow_cells)
             if any(abs(val - a) <= tol for a in pool):
                 continue
+            shown = text[base + m.start():base + m.end()].strip()
+            if version >= 7 and _perrow_list(val, tol, m.start(), sent, sent_nums, columns):
+                # 'baseline averages of 3.25 (Nov 7), 5.09 (Nov 14), 4.55 (Nov 21)': the label introduces the per-day values
+                # of the baseline rows, listed side by side, each a cell of the same column. A list, not a claimed aggregate.
+                continue
+            if version >= 7 and for_writer:
+                # the Writer cannot state a number no supported claim gives, so naming 'the nearest aggregate' (b95249: 2.93,
+                # 3.73) only led it to write an unbacked number on the next attempt
+                problems.append(f"'{shown}' is labelled {label.split()[0].lower()!r} but is not the average of the cited rows "
+                                f"(a single row's value or a mean no supported claim states): quote a baseline average only as "
+                                f"a supported claim gives it, or list the per-day values ('the other Thursdays: 3.25, 5.09 and "
+                                f"4.55 mi') without calling one of them the baseline")
+                continue
             near = min(aggs, key=lambda a: abs(a - val), default=None)
             hint = f"; the nearest aggregate of the cited rows is {near:,.2f}" if near is not None else ""
-            shown = text[base + m.start():base + m.end()].strip()
             problems.append(f"'{shown}' is labelled {label.split()[0].lower()!r} but is not the average of the cited rows "
                             f"(a single row's value or a wrong mean){hint}: declare the average in derived with a formula, "
                             f"or drop the label")
     return list(dict.fromkeys(problems))
+
+
+_LIST_GAP = re.compile(r"^(?:[\s,;:()&/]|and\b|or\b|mi\b|miles\b|km\b|mm\b|usd\b|trips\b|°c\b|c\b|\$)*$", re.I)
+
+
+def _perrow_list(val: float, tol: float, pos: int, sent: str, sent_nums, columns) -> bool:
+    """val is one entry of a list of per-row values: a neighbouring number, separated only by list punctuation, units or
+    (blanked) dates, is a cell of another row of the same cited column. '77,244 trips vs. baseline average of 141,642' and
+    'from a baseline of 28.71 to 25.32' are not lists: words stand between the numbers."""
+    idx = next((k for k, x in enumerate(sent_nums) if x[2] == pos), None)
+    if idx is None:
+        return False
+    neigh = []
+    for k in (idx - 1, idx + 1):
+        if 0 <= k < len(sent_nums):
+            raw, suf, a, b = sent_nums[k]
+            gap = sent[b:pos] if k < idx else sent[sent_nums[idx][3]:a]
+            if suf in ("%", "x", "\u00d7") or not _LIST_GAP.match(gap):
+                continue
+            neigh.append((abs(float(raw.replace(",", ""))) * (1000 if suf == "k" else 1), _stated_tolerance(raw, suf) + 1e-9))
+    for col in columns:
+        hit = [i for i, c in enumerate(col) if abs(c - val) <= tol]
+        if hit and any(abs(c - v) <= t for v, t in neigh for i, c in enumerate(col) if i not in hit):
+            return True
+    return False
+
+
+# ---- v7: wording that does not fit the measure -------------------------------------------------------------------------
+_LENGTH_WORD = re.compile(r"\b(longer|shorter)\b", re.I)
+_LENGTH_OK = re.compile(r"distance|mile|\bmi\b|km|duration|minute|time", re.I)
+
+
+def check_measure_wording(text: str) -> list[str]:
+    """'shorter avg_total_amount': an amount of money is higher or lower, never longer or shorter (v7). A length word must
+    sit next to a distance or a duration; next to a money measure it is wrong."""
+    problems = []
+    for m in _LENGTH_WORD.finditer(text):
+        after = text[m.end():m.end() + 40]
+        nxt = re.match(r"\W*(?:\w+\W+){0,2}?(\w*(?:amount|fare|total|price|cost|tip|toll|revenue|spend|charge)\w*)", after, re.I)
+        if nxt and not _LENGTH_OK.search(after[:nxt.start(1)]):
+            word = m.group(1).lower()
+            problems.append(f"'{word} {nxt.group(1)}': a money amount is {'higher' if word == 'longer' else 'lower'}, not {word}; "
+                            f"use higher/lower for amounts and keep longer/shorter for distances and durations")
+    return list(dict.fromkeys(problems))
+
+
+def sql_parse_problems(sql: str) -> list[str]:
+    """v7: a SQL draft must parse before it is run. Unbalanced parentheses are located precisely (the guard's own parser
+    only says 'Expecting )'), and any other Spark SQL parse error is returned in the words the guard would use."""
+    opens, i, n = [], 0, len(sql)
+    while i < n:
+        ch = sql[i]
+        if ch in "'\"`":
+            j = sql.find(ch, i + 1)
+            i = n if j < 0 else j + 1
+            continue
+        if ch == "(":
+            opens.append(i)
+        elif ch == ")":
+            if not opens:
+                return [f"unbalanced parentheses: ')' at character {i + 1} closes nothing ({sql[max(0, i - 40):i + 1]!r})"]
+            opens.pop()
+        i += 1
+    if opens:
+        k = opens[-1]
+        word = re.search(r"(\w+)\s*$", sql[:k])
+        return [f"unbalanced parentheses: the '(' after {word.group(1) if word else 'position'} at character {k + 1} is never "
+                f"closed ({sql[max(0, k - 30):k + 50]!r}...): close every call such as ROUND(..., 1) and NULLIF(x, 0)"]
+    try:
+        import sqlglot
+        from sqlglot.errors import SqlglotError
+        sqlglot.parse(sql, read="spark")
+    except SqlglotError as e:
+        return [f"the SQL does not parse: {str(e).splitlines()[0][:200]}"]
+    except Exception:
+        return []
+    return []
 
 
 # ---- v5: comparison scope --------------------------------------------------------------------------------------------------

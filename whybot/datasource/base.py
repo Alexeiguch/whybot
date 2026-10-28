@@ -4,6 +4,7 @@ from __future__ import annotations
 import concurrent.futures as cf
 import hashlib
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -148,6 +149,7 @@ class DataSource:
     kind = "live"  # live | recorded | dev
     dialect = "ANSI SQL"
     dialect_notes = ""
+    concurrency = 1  # how many queries may run at once (a live source with a session pool sets more)
 
     def catalog(self) -> list[dict]:
         """[{table, columns:[[name,type],...], note}]"""
@@ -176,11 +178,16 @@ class DataSource:
         sql = guard_sql(sql, allowed_tables=self.allowed_tables())
         t0 = time.time()
         ex = cf.ThreadPoolExecutor(max_workers=1)
-        fut = ex.submit(self._execute, sql)
+        tid: list[int] = []
+
+        def work():
+            tid.append(threading.get_ident())
+            return self._execute(sql)
+        fut = ex.submit(work)
         try:
             res = fut.result(timeout=timeout_s)
         except cf.TimeoutError:
-            self.cancel()
+            self.cancel_thread(tid[0] if tid else None)
             raise DataSourceError(f"query timed out after {timeout_s:.0f}s")
         except DataSourceError:
             raise
@@ -194,6 +201,9 @@ class DataSource:
 
     def cancel(self) -> None:
         pass
+
+    def cancel_thread(self, tid: int | None) -> None:
+        self.cancel()
 
     def close(self) -> None:
         pass

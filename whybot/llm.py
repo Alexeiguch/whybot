@@ -136,8 +136,9 @@ class BaseLLM:
             except (ValueError, ValidationError, json.JSONDecodeError) as e:
                 err = str(e)[:800]
             errors.append(err)
-            if self.on_call:
-                self.on_call({"role": role, "event": "json_retry", "attempt": attempt, "error": err})
+            if self.on_call:  # the rejected draft goes into the trace with the reason, so a rejection can be audited
+                self.on_call({"role": role, "event": "json_retry", "attempt": attempt, "error": err,
+                              "rejected_draft": strip_reasoning(raw)[:4000]})
             messages = messages[:2] + [
                 {"role": "assistant", "content": strip_reasoning(raw)[:4000] or "(empty)"},
                 {"role": "user", "content": f"Your previous answer was rejected: {err}\nReturn a corrected JSON object only."},

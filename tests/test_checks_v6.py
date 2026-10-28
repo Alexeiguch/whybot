@@ -59,8 +59,8 @@ C3 = _claim("Weather on 2024-11-28 had prcp_mm=0 and tmax_c=8.3, similar to base
              _cv("Q3", "prcp_mm", 0.0, "trip_date=2024-11-15"), _cv("Q3", "tmax_c", 14.4, "trip_date=2024-11-15")], "c3", "H2")
 
 
-def test_checks_version_is_6():
-    assert CHECKS_VERSION == 6
+def test_checks_version_is_6_or_later():
+    assert CHECKS_VERSION >= 6
 
 
 # ---- a claim about date D needs a row dated D --------------------------------------------------------------------------

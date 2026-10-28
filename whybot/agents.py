@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 import re
 
-from .checks import CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, tables_in_sql, units_text, weekdays_text
+from .checks import (CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, sql_parse_problems, tables_in_sql, units_text,
+                     weekdays_text)
 from .evidence import Evidence
 from .llm import BaseLLM
 from .schemas import ClaimSet, CriticReport, FinalAnswer, Plan, SQLDraft
@@ -119,6 +120,10 @@ class SQLAgent:
                 errs.append(f"query must reference the catalog tables by full name: {', '.join(tables or known[:3])}")
             if self.version >= 4:
                 errs += check_calendar_sql(s, f"{question}\n{purpose}" if self.version >= 6 else "")
+            if self.version >= 7 and not errs:
+                # parse before running: an unclosed ROUND( used to fail in the guard, cost a schema re-describe and a whole
+                # repair round (b95249 Q1, 3 attempts, ~40 s); now the model fixes it inside the same call
+                errs += sql_parse_problems(s)
             return errs
 
         d, meta = self.llm.complete_json("sql", self.SYSTEM, user, SQLDraft, validator=validate, max_tokens=1500)
@@ -159,7 +164,10 @@ class Analyst:
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
 
-    def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str) -> tuple[ClaimSet, dict]:
+    SYSTEM_V7 = (" Amounts of money (avg_total_amount, fares) are higher or lower, never longer or shorter. Never write 'no "
+                 "data-quality flags' (or issues) when DATA-QUALITY NOTES are listed; leave data quality to the caveats.")
+
+    def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str, dq_notes=()) -> tuple[ClaimSet, dict]:
         ev_ids = {e.qid for e in evidence}
         user = (f"QUESTION: {question}\n\nHYPOTHESES:\n{plan_text}\n\nEVIDENCE:\n" +
                 "\n\n".join(e.for_prompt() for e in evidence) + f"\n\nCRITIC FEEDBACK ON EARLIER DRAFT:\n{feedback or '(none)'}")
@@ -167,6 +175,8 @@ class Analyst:
             user += "\n\n" + units_text(evidence)
         if self.version >= 6:
             user += "\n\n" + weekdays_text(evidence)
+        if self.version >= 7 and dq_notes:
+            user += "\n\nDATA-QUALITY NOTES (from the Critic's check; caveats, not evidence):\n" + "\n".join(f"- {n}" for n in dq_notes)
 
         ev_map = {e.qid: e for e in evidence}
         rounds = {"n": 0}
@@ -184,7 +194,7 @@ class Analyst:
             if errs or rounds["n"] >= 3:
                 return errs  # two self-repair rounds; after that the Critic's own number check decides
             for c in cs.claims:
-                ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version, plan_text=plan_text)
+                ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version, plan_text=plan_text, dq_notes=dq_notes)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
             return errs
 
@@ -193,7 +203,8 @@ class Analyst:
             system = system.replace("'Trips on 2024-12-21 were {pct_change_vs_baseline}% vs the mean of the other Saturdays'",
                                     "'Trips on <target date> were {pct_change_vs_baseline}% vs the mean of the other <weekday of the "
                                     "baseline rows>s'")
-        system += (self.SYSTEM_V5 if self.version >= 5 else "") + (self.SYSTEM_V6 if self.version >= 6 else "")
+        system += (self.SYSTEM_V5 if self.version >= 5 else "") + (self.SYSTEM_V6 if self.version >= 6 else "") + \
+            (self.SYSTEM_V7 if self.version >= 7 else "")
         return self.llm.complete_json("analyst", system, user, ClaimSet, validator=validate, max_tokens=5000)
 
 
@@ -265,11 +276,19 @@ class Writer:
                  "measurements: quote one only in the same sentence as the measured change it is compared with "
                  "('+0.15%, within the 5% threshold'), or leave it out.")
 
+    SYSTEM_V7 = (" Write in plain words for a reader, not SQL: say 'average trip distance', not avg_trip_distance, and full "
+                 "sentences, not col=value lists. To compare the target day with the baseline days, either quote the baseline "
+                 "average exactly as a supported claim states it, or list the per-day values ('the other Thursdays: 3.25, 5.09 "
+                 "and 4.55 mi'); never call a single day's value, or a number you worked out, the baseline or average. Money "
+                 "amounts are higher or lower, never longer or shorter. Never write 'no data-quality flags/issues' when "
+                 "DATA-QUALITY NOTES are listed: mention them in the caveats instead. The headline states the finding in one "
+                 "sentence; the answer adds the explanation without repeating the headline word for word.")
+
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
 
     def write(self, question: str, status: str, supported_claims: list[dict], rejected: list[dict], evidence: list[Evidence],
-              hypothesis_status: list[dict], validator) -> tuple[FinalAnswer, dict]:
+              hypothesis_status: list[dict], validator, dq_notes=()) -> tuple[FinalAnswer, dict]:
         citable = {cv["qid"] for c in supported_claims for cv in c.get("cited_values", [])}
         ev_list = "\n".join(f"{e.qid}: sql_hash={e.sql_hash} tables={e.tables} purpose={e.purpose[:120]}"
                             for e in evidence if e.status == "ok" and e.qid in citable) or "(none)"
@@ -282,5 +301,7 @@ class Writer:
             user += "\n\n" + units_text([e for e in evidence if e.qid in citable])
         if self.version >= 6:
             user += "\n\n" + weekdays_text([e for e in evidence if e.qid in citable])
-        system = self.SYSTEM + (self.SYSTEM_V5 if self.version >= 5 else "")
+        if self.version >= 7 and dq_notes:
+            user += "\n\nDATA-QUALITY NOTES (caveats, not evidence):\n" + "\n".join(f"- {n}" for n in dq_notes)
+        system = self.SYSTEM + (self.SYSTEM_V5 if self.version >= 5 else "") + (self.SYSTEM_V7 if self.version >= 7 else "")
         return self.llm.complete_json("writer", system, user, FinalAnswer, validator=validator, max_tokens=2500)

@@ -1,7 +1,9 @@
 """Zetaris Lightning over JDBC (jaydebeapi + the Zetaris driver JAR). The live, primary data source."""
 from __future__ import annotations
 
+import concurrent.futures as cf
 import os
+import queue
 import re
 import threading
 from pathlib import Path
@@ -84,42 +86,70 @@ class ZetarisJDBCSource(DataSource):
             import jaydebeapi
         except ImportError as e:
             raise DataSourceError("jaydebeapi is not installed") from e
+        self._connect = lambda: jaydebeapi.connect(self.driver, self.url, [user, pwd], self.jar)
         try:
-            self._conn = jaydebeapi.connect(self.driver, self.url, [user, pwd], self.jar)
+            first = self._connect()  # also starts the JVM, once, before any worker thread connects
         except Exception as e:
             raise DataSourceError(f"JDBC connect failed: {type(e).__name__}: {str(e)[:300]}") from e
-        self._lock = threading.Lock()
+        # A small pool of sessions, so independent queries of one plan run side by side (each Zetaris query spends
+        # most of its 20-30 s waiting on the driver). ZETARIS_POOL=1 restores the single serialised session.
+        self.pool_size = max(1, int(os.environ.get("ZETARIS_POOL", "4")))
+        self.concurrency = self.pool_size
+        self._conns = [first]
+        self._free: queue.Queue = queue.Queue()
+        self._free.put(first)
+        self._grow = threading.Lock()
         self.databases = databases
         self.tables = list(tables or [])
         self.tables_allow = {t.lower() for t in self.tables}
-        self._active = None
+        self._active: dict[int, object] = {}
         self._catalog: list[dict] | None = None
+        self._catalog_lock = threading.Lock()
 
     LOCK_TIMEOUT_S = 120.0
 
+    @property
+    def _conn(self):
+        return self._conns[0]
+
     def _acquire(self):
-        if not self._lock.acquire(timeout=self.LOCK_TIMEOUT_S):
-            raise DataSourceError("Zetaris session busy: a previous query is still running (lock timeout)")
+        try:
+            return self._free.get_nowait()
+        except queue.Empty:
+            pass
+        with self._grow:
+            if len(self._conns) < self.pool_size:
+                try:
+                    c = self._connect()
+                    self._conns.append(c)
+                    return c
+                except Exception:
+                    pass  # a session that cannot open just means waiting for a free one
+        try:
+            return self._free.get(timeout=self.LOCK_TIMEOUT_S)
+        except queue.Empty:
+            raise DataSourceError("Zetaris session busy: every pooled session is still running a query (lock timeout)")
 
     def _raw(self, sql: str, cap: int | None = None) -> QueryResult:
         """cap: fetch at most cap+1 rows (agent queries); None for catalogue introspection."""
-        self._acquire()
+        conn = self._acquire()
+        tid = threading.get_ident()
         try:
-            cur = self._conn.cursor()
-            self._active = cur
+            cur = conn.cursor()
+            self._active[tid] = cur
             try:
                 cur.execute(sql)
                 cols = [d[0] for d in (cur.description or [])]
                 fetched = (cur.fetchmany(cap + 1) if cap else cur.fetchall()) if cols else []
                 rows = [[to_python(v) for v in r] for r in fetched]
             finally:
-                self._active = None
+                self._active.pop(tid, None)
                 try:
                     cur.close()
                 except Exception:
                     pass
         finally:
-            self._lock.release()
+            self._free.put(conn)
         return QueryResult(columns=cols, rows=rows[:cap] if cap else rows, source_label=self.label, meta={"rows_total": len(rows)})
 
     def _execute(self, sql: str) -> QueryResult:
@@ -129,12 +159,17 @@ class ZetarisJDBCSource(DataSource):
             raise DataSourceError(f"Zetaris error: {str(e)[:600]}") from e
 
     def catalog(self) -> list[dict]:
+        with self._catalog_lock:
+            return self._catalog_locked()
+
+    def _catalog_locked(self) -> list[dict]:
         if self._catalog is not None:
             return self._catalog
         out = []
-        if self.tables:  # explicit allowlist (incl. SchemaStore views such as whybot.yellow_daily)
-            for t in self.tables:
-                out.append({"table": t, "columns": self._columns(t), "note": ""})
+        if self.tables:  # explicit allowlist (incl. SchemaStore views such as whybot.yellow_daily): describe them side by side
+            with cf.ThreadPoolExecutor(max_workers=min(self.pool_size, len(self.tables))) as ex:
+                cols = list(ex.map(self._columns, self.tables))
+            out = [{"table": t, "columns": c, "note": ""} for t, c in zip(self.tables, cols)]
             self._catalog = out
             return out
         for db in self.databases:
@@ -176,15 +211,22 @@ class ZetarisJDBCSource(DataSource):
 
     def cancel(self) -> None:
         """Best effort: cancel the running JDBC statement so the session lock is released after a timeout."""
-        cur = self._active
-        try:
-            if cur is not None and getattr(cur, "_prep", None) is not None:
-                cur._prep.cancel()
-        except Exception:
-            pass
+        self.cancel_thread(None)
+
+    def cancel_thread(self, tid: int | None) -> None:
+        """Cancel the statement running on worker thread tid (every running statement when tid is None)."""
+        for t, cur in list(self._active.items()):
+            if tid is not None and t != tid:
+                continue
+            try:
+                if getattr(cur, "_prep", None) is not None:
+                    cur._prep.cancel()
+            except Exception:
+                pass
 
     def close(self) -> None:
-        try:
-            self._conn.close()
-        except Exception:
-            pass
+        for c in self._conns:
+            try:
+                c.close()
+            except Exception:
+                pass
