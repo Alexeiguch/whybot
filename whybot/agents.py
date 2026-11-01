@@ -318,6 +318,7 @@ class Analyst:
             if errs or rounds["n"] >= 3:
                 return errs  # two self-repair rounds; after that the Critic's own number check decides
             summary = summary_row_qids(evidence) if self.version >= 7 else set()
+            passing_causes = 0
             for c in cs.claims:
                 if c.hypothesis_id == "H0" and any(cv.qid in summary for cv in c.cited_values):
                     # VPS run 2: c1 restated the summary row with avg(v2,v3,v4) over three cells and cost a whole
@@ -325,6 +326,14 @@ class Analyst:
                     continue
                 ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version, plan_text=plan_text, dq_notes=dq_notes)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
+                if not ch.problems and c.hypothesis_id != "H0":
+                    passing_causes += 1
+            if self.version >= 7 and errs and summary and passing_causes:
+                # VPS run 3: the change (WhyBot's C0 from the summary row) and the holiday and weather claims passed on the
+                # first draft; two more rounds (47 s) went on an average-distance claim and a 'no data-quality flags'
+                # claim, and both still failed. With the change covered and a cause claim already clean, one draft is
+                # enough: the failing side claims are rejected by the same checks at the Critic and left out.
+                return []
             if self.version >= 7:
                 # a retry that comes back with nothing but the problems it was already told about will not fix them on a
                 # third try either (run v7b: c2 rejected identically twice, 33 s); stop here and let the Critic's own

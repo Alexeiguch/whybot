@@ -107,3 +107,19 @@ def test_the_analyst_is_not_retried_for_an_h0_claim_that_c0_replaces():
     llm = FakeLLM({"analyst": [claims]})
     cs, meta = Analyst(llm).draft("why?", "H0", [Q2, Q3, ROW], "")
     assert [c.cid for c in cs.claims] == ["c1", "c2"] and meta.get("attempt", 1) == 1
+
+
+def test_one_analyst_draft_is_enough_when_c0_and_a_clean_cause_claim_exist():
+    from conftest import FakeLLM
+    from whybot.agents import Analyst
+    claims = {"claims": [
+        {"cid": "c1", "hypothesis_id": "H1", "direction": "supports", "statement": "2024-11-28 had 21.8 mm of rain",
+         "cited_values": [{"qid": "Q3", "column": "prcp_mm", "value": 21.8, "row_hint": "trip_date=2024-11-28"}]},
+        {"cid": "c2", "hypothesis_id": "H3", "direction": "supports", "statement": "Fares averaged 4.61",
+         "cited_values": [{"qid": "Q3", "column": "avg_total_amount", "value": 4.61, "row_hint": "trip_date=2024-11-28"}]}]}
+    cs, meta = Analyst(FakeLLM({"analyst": [claims]})).draft("why?", "H0", [Q2, Q3, ROW], "")
+    assert [c.cid for c in cs.claims] == ["c1", "c2"] and meta.get("attempt", 1) == 1
+    # without the summary row (no C0) the side claim's problem still earns a repair round
+    fixed = {"claims": [claims["claims"][0]]}
+    cs, meta = Analyst(FakeLLM({"analyst": [claims, fixed]})).draft("why?", "H0", [Q2, Q3], "")
+    assert [c.cid for c in cs.claims] == ["c1"] and meta.get("attempt") == 2
