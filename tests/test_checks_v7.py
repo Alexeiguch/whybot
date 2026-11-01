@@ -603,3 +603,27 @@ def test_identical_sql_runs_once_per_run():
     ts = [threading.Thread(target=lambda: o._run_once(DS(), "h1", "select 1")) for _ in range(5)]
     [t.start() for t in ts]; [t.join() for t in ts]
     assert calls == ["select 1"] and o._run_once(DS(), "h2", "select 2") == "rows" and len(calls) == 2
+
+
+def test_a_claim_without_numbers_does_not_force_another_iteration():
+    from whybot.checks import NumericCheck, decide_next
+    from whybot.schemas import ClaimVerdict, CriticReport, FollowUp, HypothesisStatus
+    rep = CriticReport(verdicts=[ClaimVerdict(cid="C1", verdict="supported", strength=0.9, reason="r"),
+                                 ClaimVerdict(cid="C4", verdict="unsupported", strength=0.0, reason="no data")],
+                       hypothesis_status=[HypothesisStatus(hypothesis_id="H1", status="supported", reason="r")],
+                       decision="retry", feedback="fb",
+                       follow_up_queries=[FollowUp(hypothesis_id="H4", purpose="fare mix", tables=["whybot.yellow_daily"])])
+    checks = {"C1": NumericCheck("C1", True, []), "C4": NumericCheck("C4", False, ["claim cites no numbers"])}
+    assert decide_next(1, 3, rep, checks, {"Q2": Q2}).action == "write"
+    checks["C4"] = NumericCheck("C4", False, ["Q2.trips=1 not found in returned rows"])
+    assert decide_next(1, 3, rep, checks, {"Q2": Q2}).action == "retry"
+
+
+def test_a_derived_value_named_after_a_cited_cell_gives_way_to_the_cell():
+    c = Claim.model_validate({"cid": "c1", "hypothesis_id": "H0", "direction": "supports",
+        "statement": "Trips on 2024-12-21 were {pct_change_vs_baseline}% vs an average of {baseline_avg} on the other Saturdays",
+        "cited_values": [{"qid": "Q9", "column": "pct_change_vs_baseline", "value": -25.0},
+                         {"qid": "Q9", "column": "baseline_avg", "value": 120000.0}],
+        "derived": [{"name": "pct_change_vs_baseline", "formula": "(v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100"}]})
+    assert check_claim_numbers(c, {"Q9": QS}).problems == []
+    assert "-25.0% vs an average of 120,000" in c.statement

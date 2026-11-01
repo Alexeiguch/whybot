@@ -371,6 +371,11 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None, pla
     recomputed number are replaced by it (and the statement rewritten), so the arithmetic is the evaluator's, not
     the model's. Values further off are rejected. Every % or Nx ratio in the statement must then be one of the
     recomputed derived values (or a cited cell). Catches 'fell 49.5%' when the cells give 45.5%."""
+    if version >= 7:
+        # run v10a: pct_change_vs_baseline was both a cited cell of the baseline summary row and a derived formula over
+        # a v4 that did not exist (two Analyst retries); the cell is already the number, so the formula is dropped
+        cols = {cv.column.lower() for cv in claim.cited_values}
+        claim.derived = [d for d in claim.derived if d.name.lower() not in cols]
     nums = [_num(cv.value) for cv in claim.cited_values]
     problems, ok_values = [], [abs(n) for n in nums if n is not None]
     for d in list(claim.derived):
@@ -475,6 +480,12 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
         # optional follow-ups; the next two iterations took 398 s and drafted weaker claims. A complete, checked
         # explanation is written now; open hypotheses (e.g. weather 'inconclusive') stay in the caveats.
         return Decision("write", f"all {len(supported)} claims supported and number-checked; follow-ups not needed", supported)
+    if version >= 7 and explained and not failed_queries and report.verdicts and all(
+            v.cid in supported or (checks.get(v.cid) and checks[v.cid].problems == ["claim cites no numbers"])
+            for v in report.verdicts):
+        # run v10a: five claims supported (change, holiday) and the sixth said in words that fare mix was not queried; a
+        # sentence without numbers can never pass, and the retry it caused took 106 s and lost the holiday claim
+        return Decision("write", f"{len(supported)} claims supported; the rest cite no numbers", supported)
     if report.decision == "insufficient_evidence" and not report.follow_up_queries:
         return Decision("escalate", "critic judged the evidence insufficient and proposed no further tests", supported)
     if can_retry and (report.decision == "retry" or report.follow_up_queries or failed_queries or not explained):
