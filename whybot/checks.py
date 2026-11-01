@@ -1235,7 +1235,9 @@ def check_aggregate_labels(text: str, evidence: dict[str, Evidence], qids: set[s
             columns.append([abs(v) for v in vals])
             # an aggregate-named column is an aggregate only when it holds one value; per-day values in a column the SQL
             # agent named baseline_avg_trips are still single days
-            if _AGG_COL.search(c) and not _PERROW_COL.search(c) and len(set(vals)) == 1:
+            # baseline_avg from the baseline-summary query (v8c) is the baseline mean itself, though it ends in _avg
+            if _AGG_COL.search(c) and (not _PERROW_COL.search(c) or version >= 7 and c.lower().startswith("baseline")) \
+                    and len(set(vals)) == 1:
                 agg_cells += vals
             elif _AGG_COL.search(c):
                 perrow_cells += vals

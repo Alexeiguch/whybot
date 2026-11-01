@@ -534,3 +534,43 @@ def test_a_supported_holiday_hypothesis_is_named_as_the_cause():
     v8a = "Trips fell to 77,244 on 2024-11-28. The target day was Thanksgiving Day, while the baseline Thursdays had no holiday."
     assert check_supported_holiday_named(v8a, sup)
     assert check_supported_holiday_named(v8a + " The drop was driven by Thanksgiving Day.", sup) == []
+
+
+# --- v8c: the baseline average and % change come from a query row, every run ---
+from whybot.agents import add_baseline_summary_query, baseline_summary_problems  # noqa: E402
+from whybot.checks import check_claim_numbers  # noqa: E402
+from whybot.schemas import ClaimSet, Plan  # noqa: E402
+
+QS = _ev("Q9", ["target_date", "target_value", "baseline_avg", "baseline_days", "pct_change_vs_baseline"],
+         [["2024-12-21", 90000, 120000.0, 3, -25.0]])
+
+
+def _plan(queries):
+    return Plan.model_validate({"metric": "daily trips", "target_window": "2024-12-21",
+                                "baseline_window": "2024-12-07, 2024-12-14, 2024-12-28", "hypotheses": [],
+                                "queries": queries})
+
+
+def test_the_plan_always_gets_a_baseline_summary_query_for_any_target():
+    p = _plan([{"hypothesis_id": "H0", "purpose": "daily trips per Saturday", "tables": ["whybot.yellow_daily"]},
+               {"hypothesis_id": "H1", "purpose": "weather", "tables": ["whybot.weather_daily"]}])
+    add_baseline_summary_query(p)
+    q = p.queries[1]
+    assert q.hypothesis_id == "H0" and q.tables == ["whybot.yellow_daily"]
+    assert "baseline_avg" in q.purpose and "pct_change_vs_baseline" in q.purpose and "2024-12-21" in q.purpose
+    assert "Thanksgiving" not in q.purpose
+    add_baseline_summary_query(p)
+    assert len(p.queries) == 3  # added once
+
+
+def test_the_analyst_must_cite_the_baseline_summary_row():
+    other = ClaimSet.model_validate({"claims": [{"cid": "c1", "hypothesis_id": "H0", "statement": "x", "direction": "supports",
+                                                 "cited_values": [{"qid": "Q2", "column": "trips", "value": 77244,
+                                                                   "row_hint": "trip_date=2024-11-28"}]}]})
+    assert baseline_summary_problems(other, [QS, Q2])
+    good = ClaimSet.model_validate({"claims": [{"cid": "c1", "hypothesis_id": "H0", "direction": "supports",
+        "statement": "Trips on 2024-12-21 were 90,000, -25.0% vs an average of 120,000 on the other Saturdays",
+        "cited_values": [{"qid": "Q9", "column": c, "value": v} for c, v in
+                         [("target_value", 90000), ("pct_change_vs_baseline", -25.0), ("baseline_avg", 120000.0)]]}]})
+    assert baseline_summary_problems(good, [QS, Q2]) == []
+    assert check_claim_numbers(good.claims[0], {"Q9": QS, "Q2": Q2}).problems == []

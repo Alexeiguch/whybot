@@ -8,7 +8,7 @@ from .checks import (CHECKS_VERSION, check_calendar_sql, check_critic_verdicts, 
                      weekdays_text)
 from .evidence import Evidence
 from .llm import BaseLLM
-from .schemas import ClaimSet, CriticReport, FinalAnswer, Plan, SQLDraft
+from .schemas import ClaimSet, CriticReport, FinalAnswer, Plan, QuerySpec, SQLDraft
 
 KINDS = ["metric", "weather", "holiday", "day_of_week", "fare_mix", "zone_mix", "data_quality", "other"]
 
@@ -77,7 +77,33 @@ class Planner:
             return errs
 
         system = self.SYSTEM + (self.SYSTEM_V7 if self.version >= 7 else "")
-        return self.llm.complete_json("planner", system, user, Plan, validator=validate, max_tokens=3000)
+        plan, meta = self.llm.complete_json("planner", system, user, Plan, validator=validate, max_tokens=3000)
+        if self.version >= 7 and iteration == 1:
+            add_baseline_summary_query(plan)
+        return plan, meta
+
+
+BASELINE_COLS = ("target_value", "baseline_avg", "pct_change_vs_baseline")
+
+
+def add_baseline_summary_query(plan: Plan) -> None:
+    """Run v8c: the Analyst listed the three baseline Thursdays but never declared their average or the % change, so
+    the Writer had to drop -45.5% as unbacked. The change itself is the one number every answer needs, so WhyBot
+    always plans a query whose result row IS the target value, the baseline average and the % change: those become
+    cited cells, not arithmetic the Analyst may forget. General: any metric, target window and baseline days."""
+    h0 = [q for q in plan.queries if q.hypothesis_id == "H0"]
+    if any("baseline_avg" in q.purpose for q in h0):
+        return
+    tables = (h0[0].tables if h0 else plan.queries[0].tables if plan.queries else [])
+    if not tables:
+        return
+    plan.queries.insert(len(h0), QuerySpec(hypothesis_id="H0", tables=list(tables), purpose=(
+        f"Baseline summary for {plan.metric}: return ONE row with target_date (the target {plan.target_window}), "
+        f"target_value (the {plan.metric} on the target), baseline_avg (the average daily {plan.metric} over the "
+        f"comparable baseline days: {plan.baseline_window}; never include the target), baseline_days (how many baseline "
+        f"days), and pct_change_vs_baseline = (target_value - baseline_avg) / baseline_avg * 100. Read the table once "
+        f"with conditional aggregation (MAX(CASE WHEN <date> = <target> THEN ... END), AVG(CASE WHEN <date> IN "
+        f"(<baseline days>) THEN ... END)) over WHERE <date> IN (target and baseline days); no join and no subquery.")))
 
 
 class SQLAgent:
@@ -140,6 +166,22 @@ class SQLAgent:
         return d, meta
 
 
+def baseline_summary_problems(cs: ClaimSet, evidence: list[Evidence]) -> list[str]:
+    """The baseline-summary row must reach the answer as an H0 claim citing its average and its % change."""
+    errs = []
+    for e in evidence:
+        cols = {c.lower() for c in e.columns}
+        if e.status != "ok" or not e.rows or not {"baseline_avg", "pct_change_vs_baseline"} <= cols:
+            continue
+        cited = {cv.column.lower() for c in cs.claims for cv in c.cited_values if cv.qid == e.qid}
+        if not {"baseline_avg", "pct_change_vs_baseline"} <= cited:
+            errs.append(f"{e.qid} gives the baseline average and the % change: draft the H0 claim from it, citing "
+                        f"{e.qid}.target_value, {e.qid}.baseline_avg and {e.qid}.pct_change_vs_baseline as cells (no derived), "
+                        f"e.g. 'Trips on <target date> were <target_value>, <pct_change_vs_baseline>% vs an average of "
+                        f"<baseline_avg> on the other <weekday>s'")
+    return errs
+
+
 class Analyst:
     SYSTEM = (
         "You are the Analyst in WhyBot. From the query results only, draft precise claims for or against each hypothesis. "
@@ -180,7 +222,9 @@ class Analyst:
                  "{pct_change_vs_baseline}% vs an average of {baseline_avg} on the other <weekday>s'. Never call a list of "
                  "separate values an average. Derived values are arithmetic over numeric cells only: a holiday name is cited "
                  "and stated in words ('2024-11-28 was Thanksgiving Day; the other Thursdays were not holidays'), with no "
-                 "derived value.")
+                 "derived value. When a result has the columns target_value, baseline_avg and pct_change_vs_baseline, "
+                 "draft the H0 claim from that row: cite those three cells (and target_date) directly, no derived, e.g. "
+                 "'Trips on <target date> were 77,244, -45.5% vs an average of 141,603 on the other <weekday>s'.")
 
     def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str, dq_notes=()) -> tuple[ClaimSet, dict]:
         ev_ids = {e.qid for e in evidence}
@@ -223,6 +267,7 @@ class Analyst:
                 prev, rounds["prev"] = rounds["prev"], set(errs)
                 if errs and prev is not None and set(errs) <= prev:
                     return []
+                errs += baseline_summary_problems(cs, evidence)
             return errs
 
         system = self.SYSTEM
