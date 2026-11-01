@@ -134,6 +134,8 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
     corrections: list[str] = []
     problems += check_derived_values(claim, corrections, plan_thresholds(plan_text) if version >= 5 else None, version=version)
     problems += check_weather_wording(claim.statement, evidence, context)
+    if version >= 7:
+        problems += check_baseline_weather(claim, evidence)
     if version >= 5:
         problems += check_comparisons_v5(claim.statement, evidence, {cv.qid for cv in claim.cited_values}, version=version)
     elif version >= 2:
@@ -465,7 +467,8 @@ class Decision:
 
 
 def _c0_is_summary(evidence) -> bool:
-    return any(e.status == "ok" and len(e.rows) == 1 and {"baseline_avg", "pct_change_vs_baseline"} <= {c.lower() for c in e.columns}
+    # the % change may be a cell or C0's own derived value (VPS runs: the summary SQL left the % column out)
+    return any(e.status == "ok" and len(e.rows) == 1 and {"target_value", "baseline_avg"} <= {c.lower() for c in e.columns}
                for e in evidence.values())
 
 
@@ -691,6 +694,50 @@ def validate_final(ans: FinalAnswer, evidence: dict[str, Evidence], allowed_qids
     return problems
 
 
+def prune_to_valid(ans: FinalAnswer, validate, max_drops: int = 3) -> list[str] | None:
+    """VPS run 1b: three Writer drafts each failed on one or two side sentences (a made-up figure, a date shorthand),
+    and the run fell back to the claims verbatim at confidence 0.3. When dropping at most max_drops whole sentences,
+    caveats or claims (never the headline, never the last answer sentence or the last claim) leaves an answer with no
+    problems, the answer is kept without them: everything left was checked, nothing is rewritten. Mutates ans and
+    returns the dropped texts; None (ans untouched) when no such cut exists."""
+    def units(a: FinalAnswer):
+        out = [("answer", i) for i in range(len(_sentences(a.answer)))] if len(_sentences(a.answer)) > 1 else []
+        out += [("recommendation", i) for i in range(len(_sentences(a.recommendation)))]
+        out += [("caveats", i) for i in range(len(a.caveats))]
+        out += [("claims", i) for i in range(len(a.claims))] if len(a.claims) > 1 else []
+        return out
+
+    def without(a: FinalAnswer, unit) -> tuple[FinalAnswer, str]:
+        field, i = unit
+        if field in ("answer", "recommendation"):
+            parts = _sentences(getattr(a, field))
+            return a.model_copy(update={field: " ".join(parts[:i] + parts[i + 1:])}), parts[i]
+        items = list(getattr(a, field))
+        gone = items.pop(i)
+        return a.model_copy(update={field: items}), (gone.text if field == "claims" else gone)
+
+    cur, dropped = ans.model_copy(deep=True), []
+    n = len(validate(cur.model_copy(deep=True)))
+    for _ in range(max_drops):
+        if n == 0:
+            break
+        best = None
+        for u in units(cur):
+            cand, gone = without(cur, u)
+            k = len(validate(cand.model_copy(deep=True)))
+            if k < n and (best is None or k < best[0]):
+                best = (k, cand, gone)
+        if best is None:
+            return None
+        n, cur = best[0], best[1]
+        dropped.append(best[2])
+    if n or not dropped:
+        return None
+    for f in ("answer", "recommendation", "caveats", "claims"):
+        setattr(ans, f, getattr(cur, f))
+    return dropped
+
+
 _DATE_RE = re.compile(r"\b20\d\d-\d\d-\d\d\b|\b\d{1,2}(?:st|nd|rd|th)\b|\b\d{1,2}(?:st|nd|rd|th)?\s+(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?(?:\s+20\d\d)?\b"
                       r"|\b(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+20\d\d)?\b|\b20\d\d\b", re.I)
 _NUM_RE = re.compile(r"(?<![\w.])[-+]?\$?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?(k\b|%|x\b|×)?", re.I)
@@ -711,6 +758,9 @@ _DAYS_AFTER = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_M
 # "7, 14 and 21 Dec": days of the month listed before the month that ends the list
 _DAYS_BEFORE = re.compile(rf"(?P<rest>\b(?:{_DAY}{_LIST_SEP})+){_DAY}\s+(?P<m>{_MONTH})", re.I)
 
+
+# VPS run 1b: "2024-11-07, 11-14, 11-21": more month-day dates of the anchor's year after an ISO date
+_MD_AFTER = re.compile(rf"(?P<anchor>\b20\d\d-\d\d-\d\d\b)(?P<rest>(?:{_LIST_SEP}\d\d-\d\d\b(?![-./]\d|\s*%))+)", re.I)
 
 # v7: "Nov 7/14" or "2024-11-07/14": more days of the anchor's month after slashes
 _DAYS_SLASH = re.compile(rf"(?P<anchor>\b20\d\d-(?P<m1>\d\d)-\d\d\b|\b(?P<m2>{_MONTH})\s+{_DAY}\b)(?P<rest>(?:\s*/\s*{_DAY}\b)+)(?![-./]\d)", re.I)
@@ -737,8 +787,14 @@ def blank_day_lists(text: str, known_days: set[tuple[int, int]], slash: bool = F
             return " " * len(m.group("rest")) + m.group(0)[len(m.group("rest")):]
         return m.group(0)
 
+    def md_after(m):
+        pairs = [(int(a), int(b)) for a, b in re.findall(r"(\d\d)-(\d\d)", m.group("rest"))]
+        if pairs and all(pr in known_days for pr in pairs):
+            return m.group("anchor") + " " * len(m.group("rest"))
+        return m.group(0)
+
     if slash:
-        text = _DAYS_SLASH.sub(after, text)
+        text = _DAYS_SLASH.sub(after, _MD_AFTER.sub(md_after, text))
     return _DAYS_BEFORE.sub(before, _DAYS_AFTER.sub(after, text))
 
 
@@ -781,6 +837,23 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
     if day_lists is not None:
         text = blank_day_lists(text, day_lists, slash=slash_days)
     text = _TOLERANCE.sub(" ", _DAY_LIST.sub(" ", _DATE_RE.sub(" ", text)))
+
+    def plain_backed(m) -> float | None:
+        raw, suf = m.group(1), (m.group(2) or "").lower()
+        if suf not in ("", "k"):
+            return None
+        v = float(raw.replace(",", "")) * (1000 if suf == "k" else 1)
+        if v <= 12 and "." not in raw and not suf:
+            return None
+        return v if any(abs(v - c) <= max(0.0051 * abs(c), 0.51) for c in plain_pool) else None
+
+    def pct_of_pair(val: float, start: int) -> bool:
+        """A % change between two backed numbers stated in the same sentence ('77,244 vs an average of 141,603, a 45%
+        drop'): (a - b) / b * 100 within the same rounding tolerance as any %."""
+        lo = max(text.rfind(ch, 0, start) for ch in ".;\n") + 1
+        hi = min([i for i in (text.find(ch, start) for ch in ".;\n") if i != -1] or [len(text)])
+        nums = [v for mm in _NUM_RE.finditer(text[lo:hi]) if (v := plain_backed(mm)) is not None]
+        return any(b and abs(val - abs((a - b) / b * 100)) <= max(0.51, 0.005 * val) for a in nums for b in nums if a != b)
     for m in _NUM_RE.finditer(text):
         raw, suf = m.group(1), (m.group(2) or "").lower()
         val = float(raw.replace(",", ""))
@@ -797,6 +870,8 @@ def check_text_numbers(text: str, evidence: dict[str, Evidence], allowed_qids: s
             def tol(c):
                 return abs(val - c) <= max(0.0051 * abs(c), 0.51 if "." not in raw else 0.0051) or (suf == "k" and abs(val - c) <= 500)
         if not any(tol(c) for c in cands):
+            if suf == "%" and slash_days and pct_of_pair(val, m.start()):
+                continue
             problems.append(f"the number '{m.group(0).strip()}' in the answer is not backed by cited evidence")
     return problems
 
@@ -986,6 +1061,55 @@ def check_weather_wording(text: str, evidence: dict[str, Evidence], context: str
                                                     f"{r['snow']:g} mm snow" if r["snow"] is not None and r["snow"] > 0 else "") if x)
                         problems.append(f"'{m.group(0).strip()}' contradicts the recorded weather for {day} ({rec}, "
                                         f"{r['qid']} {r['table']}): describe the weather with the recorded values or drop the word")
+                        break
+    return list(dict.fromkeys(problems))
+
+
+_WX_FILTER = re.compile(r"\b\w+s\s+(?:with|that\s+had|having)\s*$", re.I)
+_WX_COL = re.compile(r"prcp|precip|rain|snow", re.I)
+
+
+def check_baseline_weather(claim: Claim, evidence: dict[str, Evidence]) -> list[str]:
+    """VPS run 1b: '2024-11-28 had rain (prcp_mm=21.8) while baseline Thursdays had no rain (prcp_mm=0.0)' cited
+    2024-11-21 at 39.9 mm and passed, because check_weather_wording leaves wording about the comparison days alone.
+    'No rain' (or dry, clear, ...) said of the baseline days must hold for every baseline row the claim cites: a cited
+    precipitation or snow cell on a day the sentence does not name contradicts it. A filter ('the Thursdays with no
+    rain') still selects days and is not checked."""
+    cited = []  # (days, column, value) for weather cells of rows the sentence does not name
+    for cv in claim.cited_values:
+        x = _num(cv.value)
+        if x is None or not _WX_COL.search(cv.column) or re.search(r"snwd|depth", cv.column, re.I):
+            continue
+        days = month_days(cv.row_hint or "")
+        if days:
+            cited.append((days, cv.column, x))
+    if not cited:
+        return []
+    problems = []
+    for sent in _sentences(claim.statement):
+        named = month_days(sent)
+        for pat in _WX_PATTERNS:
+            for m in pat.finditer(sent):
+                before = sent[:m.start()]
+                if not _BASELINE_WORDS.search(before) or _WX_FILTER.search(before):
+                    continue
+                if _NEG.search(before) or re.search(r"\b(not|never|hardly)\b|n't", m.group(0), re.I):
+                    continue
+                what = (m.groupdict().get("what") or "").lower()
+                for days, col, x in cited:
+                    if days & named:
+                        continue  # the day the sentence names is the target, not the baseline
+                    snowy = bool(re.search(r"snow", col, re.I))
+                    if what in ("rain", "rainfall", "precipitation"):
+                        bad = not snowy and x >= TRACE_MM
+                    elif what in ("snow", "snowfall"):
+                        bad = snowy and x > 0
+                    else:
+                        bad = x > 0 if snowy else x >= PRECIP_MM_THRESHOLD
+                    if bad:
+                        day = "-".join(f"{v:02d}" for v in sorted(days)[0])
+                        problems.append(f"'{m.group(0).strip()}' for the baseline days contradicts the cited {col}={x:g} on "
+                                        f"{day}: give each baseline day's value instead")
                         break
     return list(dict.fromkeys(problems))
 

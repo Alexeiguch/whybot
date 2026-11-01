@@ -190,29 +190,54 @@ def baseline_summary_problems(cs: ClaimSet, evidence: list[Evidence]) -> list[st
     return errs
 
 
+def summary_row_qids(evidence) -> set[str]:
+    """Queries whose one-row result is a baseline summary (target_value and baseline_avg): WhyBot writes the H0 change
+    claim from them itself (baseline_summary_claim)."""
+    evs = evidence.values() if isinstance(evidence, dict) else evidence
+    return {e.qid for e in evs if e and e.status == "ok" and len(e.rows) == 1
+            and {"target_value", "baseline_avg"} <= {c.lower() for c in e.columns}}
+
+
 def baseline_summary_claim(evidence: list[Evidence], metric: str, baseline_window: str):
     """Runs v10a-v12a: the Analyst kept wrapping the summary row's cells in a formula over a v4 it never cited, so the
-    change claim failed its number check and the run looped. The row already holds the three numbers, so WhyBot
-    writes the H0 change claim from it directly: no model arithmetic, every number a cited cell."""
+    change claim failed its number check and the run looped. The row already holds the numbers, so WhyBot writes the
+    H0 change claim from it directly: no model arithmetic, every number a cited cell or a derived value WhyBot computes.
+    VPS runs 1b/2: the summary SQL returned target_value and baseline_avg but no pct_change_vs_baseline column, so no C0
+    was written, the Analyst's own H0 claim failed, and the Writer could not quote the average or the % change. The %
+    change is then derived from the two cited cells, (v1 - v2) / v2 * 100, and re-checked like any derived value."""
     from .schemas import Claim
     for e in evidence:
         cols = {c.lower(): i for i, c in enumerate(e.columns)}
-        if e.status != "ok" or len(e.rows) != 1 or not {"target_value", "baseline_avg", "pct_change_vs_baseline"} <= set(cols):
+        if e.status != "ok" or len(e.rows) != 1 or not {"target_value", "baseline_avg"} <= set(cols):
             continue
         row = e.rows[0]
-        vals = {k: row[cols[k]] for k in ("target_value", "baseline_avg", "pct_change_vs_baseline")}
         try:
-            t, b, p = (float(vals[k]) for k in ("target_value", "baseline_avg", "pct_change_vs_baseline"))
+            t, b = float(row[cols["target_value"]]), float(row[cols["baseline_avg"]])
         except (TypeError, ValueError):
             continue
+        if b == 0:
+            continue
+        p = None
+        if "pct_change_vs_baseline" in cols:
+            try:
+                p = float(row[cols["pct_change_vs_baseline"]])
+            except (TypeError, ValueError):
+                p = None
         day = str(row[cols["target_date"]])[:10] if "target_date" in cols else "the target day"
+        derived = []
+        if p is None:
+            p = (t - b) / b * 100
+            keys = ("target_value", "baseline_avg")
+            derived = [{"name": "pct_change_vs_baseline", "formula": "(v1 - v2) / v2 * 100", "value": round(p, 2)}]
+        else:
+            keys = ("target_value", "pct_change_vs_baseline", "baseline_avg")
         # the baseline dates stay out of the sentence: they name rows this one-row result does not have
         stmt = (f"{metric[:1].upper() + metric[1:]} on {day} were {t:,.0f}, {p:+.1f}% vs an average of {b:,.0f} over the "
                 f"comparable baseline days")
         return Claim.model_validate({"cid": "C0", "hypothesis_id": "H0", "statement": stmt,
-                                     "direction": "supports",
-                                     "cited_values": [{"qid": e.qid, "column": e.columns[cols[k]], "value": vals[k]}
-                                                      for k in ("target_value", "pct_change_vs_baseline", "baseline_avg")]})
+                                     "direction": "supports", "derived": derived,
+                                     "cited_values": [{"qid": e.qid, "column": e.columns[cols[k]], "value": row[cols[k]]}
+                                                      for k in keys]})
     return None
 
 
@@ -256,8 +281,10 @@ class Analyst:
                  "{pct_change_vs_baseline}% vs an average of {baseline_avg} on the other <weekday>s'. Never call a list of "
                  "separate values an average. Derived values are arithmetic over numeric cells only: a holiday name is cited "
                  "and stated in words ('2024-11-28 was Thanksgiving Day; the other Thursdays were not holidays'), with no "
-                 "derived value. When a result has the columns target_value, baseline_avg and pct_change_vs_baseline, "
-                 "WhyBot writes the H0 change claim from that row itself: do not draft a claim from it.")
+                 "derived value. When a one-row result has the columns target_value and baseline_avg (the baseline summary), "
+                 "WhyBot writes the H0 change claim from that row itself: draft no claim from it and spend your claims on "
+                 "the causes. A claim that the baseline days had no rain must cite every baseline day's precipitation, "
+                 "and holds only if each is 0; otherwise give each day's value.")
 
     def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str, dq_notes=()) -> tuple[ClaimSet, dict]:
         ev_ids = {e.qid for e in evidence}
@@ -290,7 +317,12 @@ class Analyst:
                         errs.append(f"{c.cid} cites unknown {cv.qid}")
             if errs or rounds["n"] >= 3:
                 return errs  # two self-repair rounds; after that the Critic's own number check decides
+            summary = summary_row_qids(evidence) if self.version >= 7 else set()
             for c in cs.claims:
+                if c.hypothesis_id == "H0" and any(cv.qid in summary for cv in c.cited_values):
+                    # VPS run 2: c1 restated the summary row with avg(v2,v3,v4) over three cells and cost a whole
+                    # Analyst retry; the orchestrator replaces it with WhyBot's own C0, so its problems do not matter
+                    continue
                 ch = check_claim_numbers(c.model_copy(deep=True), ev_map, version=self.version, plan_text=plan_text, dq_notes=dq_notes)
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
             if self.version >= 7:

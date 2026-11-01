@@ -17,7 +17,7 @@ from pathlib import Path
 
 from .agents import Analyst, Critic, Planner, SQLAgent, Writer, baseline_summary_claim
 from .checks import (CHECKS_VERSION, check_calendar_sql, check_claim_numbers, check_consistency, check_critic_verdicts, decide_next,
-                     drop_uncited, repair_table_names, result_sanity, tables_in_sql, validate_final)
+                     drop_uncited, prune_to_valid, repair_table_names, result_sanity, tables_in_sql, validate_final)
 from .config import ROOT, Settings
 from .datasource import DataSource, DataSourceError, guard_sql, make_datasource, sql_hash
 from .evidence import Evidence
@@ -753,6 +753,15 @@ class WhyBot:
                 self._note_shadow("Writer draft", [p for p in now if p not in probs])
             if status == "insufficient_evidence" and probs == ["no claims"]:
                 return []
+            if probs and self._checks_version >= 7:
+                def check(a):
+                    return validate_final(a, evidence, allowed, verified_derived, context=ctx, dq_notes=dq_notes,
+                                          version=self._checks_version, supported_statements=sup_text, plan_text=plan_text)
+                dropped = prune_to_valid(ans, check)
+                if dropped is not None:
+                    tr.emit("Writer", "pruned", output_summary=f"dropped {len(dropped)} unbacked part(s) of the draft",
+                            status="info", data={"dropped": dropped, "problems": probs})
+                    return []
             return probs
         try:
             ans, meta = (writer.write(question, status, supported, rejected, list(evidence.values()), hstat, validator, dq_notes=dq_notes)
