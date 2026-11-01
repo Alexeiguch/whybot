@@ -123,3 +123,28 @@ def test_one_analyst_draft_is_enough_when_c0_and_a_clean_cause_claim_exist():
     fixed = {"claims": [claims["claims"][0]]}
     cs, meta = Analyst(FakeLLM({"analyst": [claims, fixed]})).draft("why?", "H0", [Q2, Q3], "")
     assert [c.cid for c in cs.claims] == ["c1"] and meta.get("attempt") == 2
+
+
+def test_null_citation_on_a_missing_row_backs_a_not_a_holiday_claim():
+    from whybot.checks import check_claim_numbers
+    from whybot.schemas import CitedValue
+    hol = _ev("Q9", ["holiday_date", "holiday_name"], [["2024-11-28", "Thanksgiving Day"]])
+    c = Claim(cid="c2", hypothesis_id="H1", direction="supports",
+              statement="2024-11-28 was Thanksgiving Day; the other Thursdays were not holidays",
+              cited_values=[CitedValue(qid="Q9", column="holiday_name", value="Thanksgiving Day", row_hint="holiday_date=2024-11-28"),
+                            CitedValue(qid="Q9", column="holiday_name", value="None", row_hint="holiday_date=2024-11-07")])
+    assert check_claim_numbers(c, {"Q9": hol}, version=7).problems == []
+    c.cited_values[1].value = "Veterans Day"  # a non-null value on a missing row is still a problem
+    assert check_claim_numbers(c, {"Q9": hol}, version=7).problems
+
+
+def test_failing_holiday_claim_still_gets_a_repair_round():
+    from conftest import FakeLLM
+    from whybot.agents import Analyst
+    bad = {"cid": "c1", "hypothesis_id": "H1", "direction": "supports", "statement": "2024-11-28 had 99.9 mm of rain",
+           "cited_values": [{"qid": "Q3", "column": "prcp_mm", "value": 99.9, "row_hint": "trip_date=2024-11-28"}]}
+    ok = {"cid": "c2", "hypothesis_id": "H2", "direction": "supports", "statement": "2024-11-28 had 21.8 mm of rain",
+          "cited_values": [{"qid": "Q3", "column": "prcp_mm", "value": 21.8, "row_hint": "trip_date=2024-11-28"}]}
+    plan = "H0 [metric] drop\nH1 [holiday] Thanksgiving\nH2 [weather] rain"
+    cs, meta = Analyst(FakeLLM({"analyst": [{"claims": [bad, ok]}, {"claims": [ok]}]})).draft("why?", plan, [Q2, Q3, ROW], "")
+    assert meta.get("attempt") == 2 and [c.cid for c in cs.claims] == ["c2"]

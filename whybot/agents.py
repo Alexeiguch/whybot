@@ -318,7 +318,8 @@ class Analyst:
             if errs or rounds["n"] >= 3:
                 return errs  # two self-repair rounds; after that the Critic's own number check decides
             summary = summary_row_qids(evidence) if self.version >= 7 else set()
-            passing_causes = 0
+            passing_causes, cause_failed = 0, False
+            kinds = dict(re.findall(r"^(H\d+) \[(\w+)\]", plan_text or "", re.M))
             for c in cs.claims:
                 if c.hypothesis_id == "H0" and any(cv.qid in summary for cv in c.cited_values):
                     # VPS run 2: c1 restated the summary row with avg(v2,v3,v4) over three cells and cost a whole
@@ -328,7 +329,11 @@ class Analyst:
                 errs += [f"{c.cid}: {p}" for p in ch.problems]
                 if not ch.problems and c.hypothesis_id != "H0":
                     passing_causes += 1
-            if self.version >= 7 and errs and summary and passing_causes:
+                if ch.problems and kinds.get(c.hypothesis_id) in ("holiday", "weather"):
+                    cause_failed = True
+            # VPS run 4: the only holiday claim failed and, with no repair round, Thanksgiving was not a supported cause;
+            # a failing holiday or weather claim still earns a repair round
+            if self.version >= 7 and errs and summary and passing_causes and not cause_failed:
                 # VPS run 3: the change (WhyBot's C0 from the summary row) and the holiday and weather claims passed on the
                 # first draft; two more rounds (47 s) went on an average-distance claim and a 'no data-quality flags'
                 # claim, and both still failed. With the change covered and a cause claim already clean, one draft is

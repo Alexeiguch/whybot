@@ -127,6 +127,10 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
             v = v.strip().strip("'\"")
             rows = rows if ki == -1 else [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
             if not rows:
+                if version >= 7 and ki != -1 and (cv.value is None or str(cv.value).strip().lower() in ("none", "null", "")):
+                    # VPS run 4: 'the other Thursdays were not holidays' cited holiday_name=None at holiday_date=2024-11-07
+                    # on the holidays query; no row there is exactly what a null citation says, so it is not a problem
+                    continue
                 problems.append(f"{cv.qid}: no row matches {cv.row_hint}")
                 continue
         if not any(value_matches(cv.value, r[idx]) for r in rows):
