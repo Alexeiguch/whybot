@@ -500,3 +500,37 @@ def test_undefined_alias_is_caught_before_it_runs():
     probs = sql_parse_problems(V7F_Q2_A3)
     assert any("alias b" in p for p in probs)
     assert sql_parse_problems("SELECT x.trip_date FROM (SELECT trip_date FROM whybot.yellow_daily) x") == []
+
+
+def test_the_baseline_average_is_written_into_the_change_claim():
+    # run v8a: 'Trips on 2024-11-28 were -45.5% vs the mean of the other Thursdays (...)' gave the Writer no single
+    # average, so it listed 130,018, 141,642 and 153,149 instead of 'an average of 141,603'
+    from whybot.checks import check_derived_values
+    from whybot.schemas import Claim
+    cells = [("2024-11-28", 77244), ("2024-11-07", 130018), ("2024-11-14", 141642), ("2024-11-21", 153149)]
+    c = Claim(cid="c1", hypothesis_id="H0", direction="supports",
+              statement="Trips on 2024-11-28 were {pct_change_vs_baseline}% vs the mean of the other Thursdays (2024-11-07, 2024-11-14, 2024-11-21)",
+              cited_values=[{"qid": "Q2", "column": "trips", "value": v, "row_hint": f"trip_date={d}"} for d, v in cells],
+              derived=[{"name": "pct_change_vs_baseline", "formula": "(v1 - avg(v2, v3, v4)) / avg(v2, v3, v4) * 100"}])
+    assert check_derived_values(c, version=7) == []
+    assert c.statement == ("Trips on 2024-11-28 were -45.5% vs the mean of the other Thursdays (an average of 141,603) "
+                           "(2024-11-07, 2024-11-14, 2024-11-21)")
+    assert agg(c.statement, ["Q2"]) == []
+
+
+def test_citations_are_listed_once_per_query():
+    from whybot.checks import _drop_hypothesis_ids
+    from whybot.schemas import Citation, FinalAnswer, FinalClaim
+    cit = Citation(qid="Q1", sql_hash="sha256:Q1", table="whybot.yellow_daily")
+    a = FinalAnswer(headline="h", answer="a", recommendation="r", confidence=0.9, caveats=[],
+                    claims=[FinalClaim(text="t", citations=[cit, cit, cit, cit])])
+    _drop_hypothesis_ids(a)
+    assert len(a.claims[0].citations) == 1
+
+
+def test_a_supported_holiday_hypothesis_is_named_as_the_cause():
+    from whybot.checks import check_supported_holiday_named
+    sup = ["holiday: 2024-11-28 was Thanksgiving Day; the other cited Thursdays (2024-11-07, 2024-11-14, 2024-11-21) were not holidays"]
+    v8a = "Trips fell to 77,244 on 2024-11-28. The target day was Thanksgiving Day, while the baseline Thursdays had no holiday."
+    assert check_supported_holiday_named(v8a, sup)
+    assert check_supported_holiday_named(v8a + " The drop was driven by Thanksgiving Day.", sup) == []

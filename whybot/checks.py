@@ -337,6 +337,30 @@ def check_direction(claim: Claim) -> list[str]:
     return []
 
 
+_BASELINE_PHRASE = re.compile(r"\b(?:the )?(?:mean|average) of (?:the )?(?:other|baseline|prior|surrounding|remaining)\b[^,.;()\d]*", re.I)
+
+
+def _add_baseline_average(claim: Claim, formula: str, nums: list) -> None:
+    """v7: 'Trips ... were -45.5% vs the mean of the other Thursdays' becomes '... the other Thursdays (an average of
+    141,603)'. The Analyst was asked for a {baseline_avg} placeholder and left it out (run v8a), so the Writer had no
+    single average to quote and listed the three days instead. The average is the evaluator's, from the formula's own
+    avg(...) over the cited cells."""
+    m = re.search(r"avg\(([^()]*)\)", formula)
+    if not m:
+        return
+    try:
+        avg = eval_formula(m.group(0), nums)
+    except ValueError:
+        return
+    shown = f"{avg:,.0f}" if abs(avg) >= 1000 else f"{avg:.2f}"
+    if shown in claim.statement:
+        return
+    ph = _BASELINE_PHRASE.search(claim.statement)
+    if ph:
+        end = ph.end() - (len(ph.group(0)) - len(ph.group(0).rstrip()))
+        claim.statement = claim.statement[:end] + f" (an average of {shown})" + claim.statement[end:]
+
+
 def check_derived_values(claim: Claim, corrections: list[str] | None = None, plan_pcts: set[float] | None = None,
                          version: int = CHECKS_VERSION) -> list[str]:
     """Every derived value is re-evaluated from the cited cells with its formula. Values within rounding of the
@@ -382,6 +406,8 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None, pla
             claim.statement = claim.statement.replace(ph, txt)
             d.value = fixed
             ok_values.append(abs(actual))
+            if version >= 7:
+                _add_baseline_average(claim, d.formula, nums)
             continue
         if _close(d.value, actual):
             ok_values.append(abs(actual))
@@ -515,6 +541,13 @@ def _drop_hypothesis_ids(ans) -> None:
     ans.caveats = [_HYP_PAREN.sub("", x) for x in ans.caveats]
     for c in ans.claims:
         c.text = _HYP_PAREN.sub("", c.text)
+        seen, uniq = set(), []  # run v8a: one citation per cited value, the same [Q1 · hash · table] four times over
+        for x in c.citations:
+            k = (x.qid, x.sql_hash, x.table.lower())
+            if k not in seen:
+                seen.add(k)
+                uniq.append(x)
+        c.citations = uniq
 
 
 def check_meta_text(texts) -> list[str]:
@@ -534,10 +567,12 @@ def check_supported_holiday_named(text: str, supported_statements: list[str]) ->
     def causal_holiday(sent: str) -> bool:  # looser than named_causes: 'Thanksgiving, a national holiday, drove the drop'
         return bool(_CAUSE_RE["holiday"].search(sent) and (_CAUSE_AFTER.search(sent) or _CAUSE_BEFORE.search(sent))
                     and not _HEDGE.search(sent))
+    # run v8a: the supported holiday claim said '2024-11-28 was Thanksgiving Day; the other Thursdays were not holidays'
+    # and the answer only said 'the target day was Thanksgiving Day'. A supported holiday hypothesis is the cause.
     hol = [body for kind, _, body in ((s or "").partition(": ") for s in supported_statements)
-           if kind == "holiday" and causal_holiday(body)]
+           if kind == "holiday" and _CAUSE_RE["holiday"].search(body)]
     if hol and not any(causal_holiday(x) for x in _SENT_SPLIT.split(text or "")):
-        return [f"a supported claim gives the holiday as the cause (\"{hol[0][:120]}\"): state it as the cause in the "
+        return [f"a supported holiday claim (\"{hol[0][:120]}\") explains the change: state the holiday as the cause in the "
                 f"headline or answer, e.g. 'driven by Thanksgiving Day'"]
     return []
 
