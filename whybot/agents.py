@@ -41,7 +41,9 @@ class Planner:
     SYSTEM_V7 = (" Be brief: one short sentence (at most 25 words) for each statement, support_if, refute_if and purpose, "
                  "and reply with compact JSON on one line (no indentation). Plan at most 4 queries: WhyBot adds the baseline "
                  "summary (target value, baseline average, % change) itself, and one daily query over the target and "
-                 "baseline days that joins trips, weather and holidays can test several hypotheses at once.")
+                 "baseline days that joins trips, weather and holidays can test several hypotheses at once. "
+                 "For a single target day, the baseline is the same weekday in the 3 weeks before it (days after it can "
+                 "carry its after-effects).")
 
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version
@@ -81,11 +83,28 @@ class Planner:
         system = self.SYSTEM + (self.SYSTEM_V7 if self.version >= 7 else "")
         plan, meta = self.llm.complete_json("planner", system, user, Plan, validator=validate, max_tokens=3000)
         if self.version >= 7 and iteration == 1:
+            prior_baseline_only(plan)
             add_baseline_summary_query(plan)
         return plan, meta
 
 
 BASELINE_COLS = ("target_value", "baseline_avg", "pct_change_vs_baseline")
+_ISO = re.compile(r"\b(\d{4}-\d{2}-\d{2})\b")
+
+
+def prior_baseline_only(plan: Plan) -> None:
+    """VPS run 5: for 'compared with the surrounding weeks' the Planner took three Thursdays before and three after
+    Thanksgiving (avg 145,713, -47.0%), where run 4 took the three before (141,603, -45.5%); the daily queries covered
+    November only, so the December days could not be cited and cost two Analyst retries. Days after the target can carry
+    its after-effects and make the baseline depend on the Planner's mood, so the baseline is the listed days BEFORE the
+    target, as long as at least two remain. General: any single-date target and listed baseline days."""
+    t = _ISO.findall(plan.target_window or "")
+    days = _ISO.findall(plan.baseline_window or "")
+    if len(t) != 1 or not days:
+        return
+    before = [d for d in days if d < t[0]]
+    if len(before) >= 2 and len(before) < len(days):
+        plan.baseline_window = ",".join(before)
 
 
 def add_baseline_summary_query(plan: Plan) -> None:

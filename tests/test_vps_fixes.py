@@ -148,3 +148,17 @@ def test_failing_holiday_claim_still_gets_a_repair_round():
     plan = "H0 [metric] drop\nH1 [holiday] Thanksgiving\nH2 [weather] rain"
     cs, meta = Analyst(FakeLLM({"analyst": [{"claims": [bad, ok]}, {"claims": [ok]}]})).draft("why?", plan, [Q2, Q3, ROW], "")
     assert meta.get("attempt") == 2 and [c.cid for c in cs.claims] == ["c2"]
+
+
+def test_baseline_keeps_only_days_before_the_target():
+    from whybot.agents import prior_baseline_only
+    from whybot.schemas import Plan
+    p = Plan.model_construct(target_window="2024-11-28", baseline_window="2024-11-07,2024-11-14,2024-11-21,2024-12-05,2024-12-12")
+    prior_baseline_only(p)
+    assert p.baseline_window == "2024-11-07,2024-11-14,2024-11-21"
+    p = Plan.model_construct(target_window="2024-11-28", baseline_window="2024-11-21,2024-12-05,2024-12-12")
+    prior_baseline_only(p)  # fewer than two days before: left alone
+    assert p.baseline_window == "2024-11-21,2024-12-05,2024-12-12"
+    p = Plan.model_construct(target_window="2024-11-01..2024-11-30", baseline_window="2024-10-01..2024-10-31")
+    prior_baseline_only(p)  # ranges are not day lists
+    assert p.baseline_window == "2024-10-01..2024-10-31"
