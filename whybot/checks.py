@@ -117,11 +117,15 @@ def check_claim_numbers(claim: Claim, evidence: dict[str, Evidence], context: st
         if hint:
             k, eq, v = hint.partition("=")
             ki = cols.get(k.strip().lower()) if eq else None
+            if ki is None and version >= 7 and len(ev.rows) == 1:
+                # run v9a: 'trip_date=2024-11-28' on the one-row baseline summary (its column is target_date) cost two
+                # Analyst retries and a second iteration; a one-row result cannot be widened, so the hint is moot
+                ki, hint = -1, ""
             if ki is None:  # never fall back to "any row": a bad hint must not widen the match
                 problems.append(f"{cv.qid}: row_hint {hint!r} must be <column>=<value> using a returned column ({', '.join(ev.columns)})")
                 continue
             v = v.strip().strip("'\"")
-            rows = [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
+            rows = rows if ki == -1 else [r for r in rows if value_matches(v, r[ki]) or str(r[ki])[:10] == v[:10] and len(v) >= 8]
             if not rows:
                 problems.append(f"{cv.qid}: no row matches {cv.row_hint}")
                 continue
@@ -420,6 +424,17 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None, pla
             ok_values.append(abs(actual))
         else:
             problems.append(f"derived {d.name}={d.value:g} but {d.formula} = {actual:.2f} from the cited cells")
+    if version >= 7:
+        # run v9a: '{pct_change_vs_baseline}% vs an average of {baseline_avg}' with both cells cited from the baseline
+        # summary row and no derived: the placeholder names a cited cell, so that cell is the number
+        for cv in claim.cited_values:
+            ph, x = "{" + cv.column + "}", _num(cv.value)
+            if ph in claim.statement and x is not None and not any(d.name == cv.column for d in claim.derived):
+                txt = f"{abs(x):,.0f}" if abs(x) >= 1000 else (f"{abs(x):.1f}" if abs(x) >= 10 else f"{abs(x):.2f}")
+                rest = claim.statement.replace(ph, "")
+                if x < 0 and not (_DOWN.search(rest) or _UP.search(rest)):
+                    txt = "-" + txt
+                claim.statement = claim.statement.replace(ph, txt)
     problems += check_direction(claim)
     for left in re.findall(r"\{[A-Za-z_]\w*\}", claim.statement):
         problems.append(f"placeholder {left} has no derived value with that name")

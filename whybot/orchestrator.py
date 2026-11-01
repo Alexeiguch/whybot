@@ -190,6 +190,7 @@ class WhyBot:
         self._question, self._cassette, self._run_id = question, None, run_id
         self._recorded_recall, self._recorded_notes, self._dialect_notes = None, {}, ""
         self._checks_version, self._shadow, self._notes = CHECKS_VERSION, [], self.notes
+        self._shared_sql = {}  # sql_hash -> Future of its result, this run only
         result = None
         t0 = time.time()
         deadline = t0 + self.s.run_timeout_s
@@ -498,7 +499,7 @@ class WhyBot:
             tr.emit("Executor", "sql_written", input_summary=spec.purpose, output_summary=draft.sql[:600], retry_count=attempt,
                     data={"qid": qid, "sql": draft.sql, "sql_hash": h, "tables": used, "llm": meta})
             try:
-                res = ds.run(draft.sql, timeout_s=self.s.sql_timeout_s)
+                res = self._run_once(ds, h, draft.sql) if self._checks_version >= 7 else ds.run(draft.sql, timeout_s=self.s.sql_timeout_s)
             except DataSourceError as e:
                 failed.append({"sql": draft.sql, "error": str(e)})
                 ev.attempts.append({"sql": draft.sql, "sql_hash": h, "error": str(e)[:500]})
@@ -547,6 +548,24 @@ class WhyBot:
         tr.emit("Executor", "fallback", output_summary=f"{qid} failed after {len(failed)} attempts; hypothesis {spec.hypothesis_id} untestable this iteration",
                 status="fallback", data={"qid": qid})
         return ev
+
+    def _run_once(self, ds, h: str, sql: str):
+        """Run v9a: the SQL agent wrote the same 4-table join for five different queries (one sql_hash), and Zetaris ran
+        it five times, ~35 s each, across two waves of sessions. Identical SQL gives identical rows, so within a run it is
+        run once and every query that wrote it shares the result (a failure is shared too, and each repairs on its own)."""
+        import threading
+        with self.__dict__.setdefault("_shared_lock", threading.Lock()):
+            shared = self.__dict__.setdefault("_shared_sql", {})
+            fut, mine = shared.get(h), False
+            if fut is None:
+                fut, mine = cf.Future(), True
+                shared[h] = fut
+        if mine:
+            try:
+                fut.set_result(ds.run(sql, timeout_s=self.s.sql_timeout_s))
+            except BaseException as e:
+                fut.set_exception(e)
+        return fut.result()
 
     def _parallelism(self, llm, ds) -> int:
         """How many queries may run at once: only for live LLM calls against a live source with a session pool. A recorded

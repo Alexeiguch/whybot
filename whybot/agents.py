@@ -39,7 +39,9 @@ class Planner:
 
     # v7: the Planner (Ultra, ~25 tokens/s) spent 59 s writing 1,468 tokens; the plan's content needs far fewer
     SYSTEM_V7 = (" Be brief: one short sentence (at most 25 words) for each statement, support_if, refute_if and purpose, "
-                 "and reply with compact JSON on one line (no indentation).")
+                 "and reply with compact JSON on one line (no indentation). Plan at most 4 queries: WhyBot adds the baseline "
+                 "summary (target value, baseline average, % change) itself, and one daily query over the target and "
+                 "baseline days that joins trips, weather and holidays can test several hypotheses at once.")
 
     def __init__(self, llm: BaseLLM, version: int = CHECKS_VERSION):
         self.llm, self.version = llm, version

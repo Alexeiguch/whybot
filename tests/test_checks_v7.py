@@ -574,3 +574,32 @@ def test_the_analyst_must_cite_the_baseline_summary_row():
                          [("target_value", 90000), ("pct_change_vs_baseline", -25.0), ("baseline_avg", 120000.0)]]}]})
     assert baseline_summary_problems(good, [QS, Q2]) == []
     assert check_claim_numbers(good.claims[0], {"Q9": QS, "Q2": Q2}).problems == []
+
+
+def test_a_row_hint_on_a_one_row_result_is_moot_and_placeholders_take_the_cited_cell():
+    c = Claim.model_validate({"cid": "c1", "hypothesis_id": "H0", "direction": "supports",
+        "statement": "Trips on 2024-12-21 were {pct_change_vs_baseline}% vs an average of {baseline_avg} on the other Saturdays",
+        "cited_values": [{"qid": "Q9", "column": "pct_change_vs_baseline", "value": -25.0, "row_hint": "trip_date=2024-12-21"},
+                         {"qid": "Q9", "column": "baseline_avg", "value": 120000.0, "row_hint": "trip_date=2024-12-21"}]})
+    ch = check_claim_numbers(c, {"Q9": QS})
+    assert ch.problems == []
+    assert c.statement == "Trips on 2024-12-21 were -25.0% vs an average of 120,000 on the other Saturdays"
+
+
+def test_identical_sql_runs_once_per_run():
+    import threading
+    from whybot.orchestrator import WhyBot as Orchestrator
+    calls = []
+
+    class DS:
+        def run(self, sql, timeout_s=None):
+            calls.append(sql)
+            threading.Event().wait(0.05)
+            return "rows"
+
+    o = Orchestrator.__new__(Orchestrator)
+    o.s = type("S", (), {"sql_timeout_s": 5})()
+    o._shared_sql = {}
+    ts = [threading.Thread(target=lambda: o._run_once(DS(), "h1", "select 1")) for _ in range(5)]
+    [t.start() for t in ts]; [t.join() for t in ts]
+    assert calls == ["select 1"] and o._run_once(DS(), "h2", "select 2") == "rows" and len(calls) == 2
