@@ -105,7 +105,7 @@ def add_baseline_summary_query(plan: Plan) -> None:
         f"comparable baseline days: {plan.baseline_window}; never include the target), baseline_days (how many baseline "
         f"days), and pct_change_vs_baseline = (target_value - baseline_avg) / baseline_avg * 100. Read the table once "
         f"with conditional aggregation (MAX(CASE WHEN <date> = <target> THEN ... END), AVG(CASE WHEN <date> IN "
-        f"(<baseline days>) THEN ... END)) over WHERE <date> IN (target and baseline days); no join and no subquery.")))
+        f"(<baseline days>) THEN ... END)) over WHERE <date> IN (target and baseline days), the target date as a literal (DATE '<target>' AS target_date); no GROUP BY, no join and no subquery.")))
 
 
 class SQLAgent:
@@ -161,6 +161,12 @@ class SQLAgent:
                 # parse before running: an unclosed ROUND( used to fail in the guard, cost a schema re-describe and a whole
                 # repair round (b95249 Q1, 3 attempts, ~40 s); now the model fixes it inside the same call
                 errs += sql_parse_problems(s)
+            if self.version >= 7 and "baseline_avg" in purpose and re.search(r"(?i)\bgroup\s+by\b", s):
+                # run v11a: GROUP BY trip_date split the baseline summary into one row per day, so baseline_avg held each
+                # day's own count and the % change was NULL; the summary is one aggregate row over all the days
+                errs.append("the baseline summary must return ONE row: remove GROUP BY (aggregate over all target and "
+                            "baseline days with MAX(CASE ...) and AVG(CASE ...)) and select the target date as a literal, "
+                            "e.g. DATE '<target>' AS target_date")
             return errs
 
         d, meta = self.llm.complete_json("sql", self.SYSTEM, user, SQLDraft, validator=validate, max_tokens=1500)

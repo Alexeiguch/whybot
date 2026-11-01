@@ -627,3 +627,31 @@ def test_a_derived_value_named_after_a_cited_cell_gives_way_to_the_cell():
         "derived": [{"name": "pct_change_vs_baseline", "formula": "(v1 - avg(v2,v3,v4)) / avg(v2,v3,v4) * 100"}]})
     assert check_claim_numbers(c, {"Q9": QS}).problems == []
     assert "-25.0% vs an average of 120,000" in c.statement
+
+
+def test_the_baseline_summary_sql_must_be_one_row():
+    from whybot.agents import SQLAgent
+    from whybot.schemas import SQLDraft
+    seen = {}
+
+    class LLM:
+        def complete_json(self, role, system, user, model, validator=None, max_tokens=0):
+            bad = SQLDraft(sql="SELECT y.trip_date AS target_date, AVG(y.trips) AS baseline_avg FROM whybot.yellow_daily y "
+                               "GROUP BY y.trip_date", tables_used=["whybot.yellow_daily"])
+            seen["errs"] = validator(bad)
+            return bad, {}
+
+    cat = [{"table": "whybot.yellow_daily", "columns": [["trip_date", "date"], ["trips", "int"]]}]
+    SQLAgent(LLM()).write("Baseline summary: target_value, baseline_avg, pct_change_vs_baseline", ["whybot.yellow_daily"],
+                          cat, {}, "spark", "", "", "q")
+    assert any("ONE row" in e for e in seen["errs"])
+
+
+def test_a_placeholder_is_not_filled_from_one_of_several_cited_cells():
+    c = Claim.model_validate({"cid": "c1", "hypothesis_id": "H0", "direction": "supports",
+        "statement": "Trips were 77,244 vs an average of {baseline_avg}",
+        "cited_values": [{"qid": "Q2", "column": "trips", "value": v, "row_hint": f"trip_date={d}"} for d, v in
+                         [("2024-11-28", 77244)]] +
+                        [{"qid": "Q9", "column": "baseline_avg", "value": v} for v in (1, 2)]})
+    check_claim_numbers(c, {"Q2": Q2, "Q9": QS})
+    assert "{baseline_avg}" in c.statement

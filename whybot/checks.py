@@ -434,7 +434,8 @@ def check_derived_values(claim: Claim, corrections: list[str] | None = None, pla
         # summary row and no derived: the placeholder names a cited cell, so that cell is the number
         for cv in claim.cited_values:
             ph, x = "{" + cv.column + "}", _num(cv.value)
-            if ph in claim.statement and x is not None and not any(d.name == cv.column for d in claim.derived):
+            same = {str(o.value) for o in claim.cited_values if o.column == cv.column}
+            if ph in claim.statement and x is not None and len(same) == 1 and not any(d.name == cv.column for d in claim.derived):
                 txt = f"{abs(x):,.0f}" if abs(x) >= 1000 else (f"{abs(x):.1f}" if abs(x) >= 10 else f"{abs(x):.2f}")
                 rest = claim.statement.replace(ph, "")
                 if x < 0 and not (_DOWN.search(rest) or _UP.search(rest)):
