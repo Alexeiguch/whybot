@@ -15,7 +15,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from .agents import Analyst, Critic, Planner, SQLAgent, Writer
+from .agents import Analyst, Critic, Planner, SQLAgent, Writer, baseline_summary_claim
 from .checks import (CHECKS_VERSION, check_calendar_sql, check_claim_numbers, check_consistency, check_critic_verdicts, decide_next,
                      drop_uncited, repair_table_names, result_sanity, tables_in_sql, validate_final)
 from .config import ROOT, Settings
@@ -373,6 +373,14 @@ class WhyBot:
                     tr.emit("Orchestrator", "reuse_claims", output_summary=f"Analyst unavailable; re-checking the {len(claims.claims)} claims of the previous iteration", status="fallback")
                 else:
                     claims = ClaimSet(claims=[])
+            if self._checks_version >= 7:
+                c0 = baseline_summary_claim(ok_ev, plan.metric, plan.baseline_window)
+                if c0 is not None:
+                    keep = [c for c in claims.claims if not (c.hypothesis_id == "H0" and any(
+                        cv.qid == c0.cited_values[0].qid for cv in c.cited_values)) and c.cid != "C0"]
+                    claims = ClaimSet(claims=[c0] + keep)
+                    tr.emit("Analyst", "baseline_claim", target_agent="Critic", output_summary=f"C0 from {c0.cited_values[0].qid}: {c0.statement}",
+                            status="info", data={"claim": c0.model_dump()})
             prev_claims = claims
 
             # ---- Critique: deterministic number checks, then the LLM critic

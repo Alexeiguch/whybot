@@ -655,3 +655,28 @@ def test_a_placeholder_is_not_filled_from_one_of_several_cited_cells():
                         [{"qid": "Q9", "column": "baseline_avg", "value": v} for v in (1, 2)]})
     check_claim_numbers(c, {"Q2": Q2, "Q9": QS})
     assert "{baseline_avg}" in c.statement
+
+
+def test_whybot_writes_the_change_claim_from_the_summary_row():
+    from whybot.agents import baseline_summary_claim
+    row = _ev("Q9", ["target_date", "target_value", "baseline_avg", "baseline_days", "pct_change_vs_baseline"],
+              [["2024-11-28", 77244, 141603.0, 3, -45.45030825618102]])
+    c = baseline_summary_claim([Q2, row], "trips", "2024-11-07, 2024-11-14, 2024-11-21")
+    assert c.statement == ("Trips on 2024-11-28 were 77,244, -45.5% vs an average of 141,603 over the comparable "
+                           "baseline days")
+    assert check_claim_numbers(c, {"Q2": Q2, "Q9": row}).problems == []
+    grouped = _ev("Q9", row.columns, [["2024-11-07", None, 130018.0, 1, None], ["2024-11-28", 77244, None, 0, None]])
+    assert baseline_summary_claim([grouped], "trips", "x") is None
+
+
+def test_a_supported_change_and_cause_are_written_despite_a_failed_side_claim():
+    from whybot.checks import NumericCheck, decide_next
+    from whybot.schemas import ClaimVerdict, CriticReport, HypothesisStatus
+    rep = CriticReport(verdicts=[ClaimVerdict(cid="C0", verdict="supported", strength=0.9, reason="r"),
+                                 ClaimVerdict(cid="C1", verdict="supported", strength=0.9, reason="r"),
+                                 ClaimVerdict(cid="C3", verdict="unsupported", strength=0.0, reason="bad avg")],
+                       hypothesis_status=[HypothesisStatus(hypothesis_id="H1", status="supported", reason="r")],
+                       decision="retry", feedback="fb", follow_up_queries=[])
+    checks = {"C0": NumericCheck("C0", True, []), "C1": NumericCheck("C1", True, []), "C3": NumericCheck("C3", False, ["x"])}
+    assert decide_next(1, 3, rep, checks, {"Q2": Q2}).action == "retry"
+    assert decide_next(1, 3, rep, checks, {"Q2": Q2, "Q9": QS}).action == "write"

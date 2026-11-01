@@ -464,6 +464,11 @@ class Decision:
     supported_cids: list[str]
 
 
+def _c0_is_summary(evidence) -> bool:
+    return any(e.status == "ok" and len(e.rows) == 1 and {"baseline_avg", "pct_change_vs_baseline"} <= {c.lower() for c in e.columns}
+               for e in evidence.values())
+
+
 def decide_next(iteration: int, max_iterations: int, report: CriticReport, checks: dict[str, NumericCheck],
                 evidence: dict[str, Evidence], out_of_time: bool = False, version: int = CHECKS_VERSION) -> Decision:
     """Branching policy. Numeric checks override the LLM critic: a claim with a bad number is never 'supported'."""
@@ -487,6 +492,12 @@ def decide_next(iteration: int, max_iterations: int, report: CriticReport, check
         # run v10a: five claims supported (change, holiday) and the sixth said in words that fare mix was not queried; a
         # sentence without numbers can never pass, and the retry it caused took 106 s and lost the holiday claim
         return Decision("write", f"{len(supported)} claims supported; the rest cite no numbers", supported)
+    if version >= 7 and explained and not failed_queries and "C0" in supported and \
+            _c0_is_summary(evidence):
+        # runs v9a, v12a: the measured change (WhyBot's own C0 from the baseline summary row) and a cause were both
+        # supported, yet one side claim (an average distance) failed and the retries took 240-380 s and lost claims.
+        # The answer is complete; the failed side claims are simply left out.
+        return Decision("write", f"change and cause supported ({len(supported)} claims); side claims left out", supported)
     if report.decision == "insufficient_evidence" and not report.follow_up_queries:
         return Decision("escalate", "critic judged the evidence insufficient and proposed no further tests", supported)
     if can_retry and (report.decision == "retry" or report.follow_up_queries or failed_queries or not explained):

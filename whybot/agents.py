@@ -190,6 +190,32 @@ def baseline_summary_problems(cs: ClaimSet, evidence: list[Evidence]) -> list[st
     return errs
 
 
+def baseline_summary_claim(evidence: list[Evidence], metric: str, baseline_window: str):
+    """Runs v10a-v12a: the Analyst kept wrapping the summary row's cells in a formula over a v4 it never cited, so the
+    change claim failed its number check and the run looped. The row already holds the three numbers, so WhyBot
+    writes the H0 change claim from it directly: no model arithmetic, every number a cited cell."""
+    from .schemas import Claim
+    for e in evidence:
+        cols = {c.lower(): i for i, c in enumerate(e.columns)}
+        if e.status != "ok" or len(e.rows) != 1 or not {"target_value", "baseline_avg", "pct_change_vs_baseline"} <= set(cols):
+            continue
+        row = e.rows[0]
+        vals = {k: row[cols[k]] for k in ("target_value", "baseline_avg", "pct_change_vs_baseline")}
+        try:
+            t, b, p = (float(vals[k]) for k in ("target_value", "baseline_avg", "pct_change_vs_baseline"))
+        except (TypeError, ValueError):
+            continue
+        day = str(row[cols["target_date"]])[:10] if "target_date" in cols else "the target day"
+        # the baseline dates stay out of the sentence: they name rows this one-row result does not have
+        stmt = (f"{metric[:1].upper() + metric[1:]} on {day} were {t:,.0f}, {p:+.1f}% vs an average of {b:,.0f} over the "
+                f"comparable baseline days")
+        return Claim.model_validate({"cid": "C0", "hypothesis_id": "H0", "statement": stmt,
+                                     "direction": "supports",
+                                     "cited_values": [{"qid": e.qid, "column": e.columns[cols[k]], "value": vals[k]}
+                                                      for k in ("target_value", "pct_change_vs_baseline", "baseline_avg")]})
+    return None
+
+
 class Analyst:
     SYSTEM = (
         "You are the Analyst in WhyBot. From the query results only, draft precise claims for or against each hypothesis. "
@@ -231,8 +257,7 @@ class Analyst:
                  "separate values an average. Derived values are arithmetic over numeric cells only: a holiday name is cited "
                  "and stated in words ('2024-11-28 was Thanksgiving Day; the other Thursdays were not holidays'), with no "
                  "derived value. When a result has the columns target_value, baseline_avg and pct_change_vs_baseline, "
-                 "draft the H0 claim from that row: cite those three cells (and target_date) directly, no derived, e.g. "
-                 "'Trips on <target date> were 77,244, -45.5% vs an average of 141,603 on the other <weekday>s'.")
+                 "WhyBot writes the H0 change claim from that row itself: do not draft a claim from it.")
 
     def draft(self, question: str, plan_text: str, evidence: list[Evidence], feedback: str, dq_notes=()) -> tuple[ClaimSet, dict]:
         ev_ids = {e.qid for e in evidence}
@@ -275,7 +300,6 @@ class Analyst:
                 prev, rounds["prev"] = rounds["prev"], set(errs)
                 if errs and prev is not None and set(errs) <= prev:
                     return []
-                errs += baseline_summary_problems(cs, evidence)
             return errs
 
         system = self.SYSTEM
