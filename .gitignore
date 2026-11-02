@@ -26,3 +26,5 @@ logs/*
 !logs/recorded-*.result.json
 # schema introspection cache (column lists only)
 .cache/
+!logs/vps-live-*.jsonl
+!logs/vps-live-*.result.json
